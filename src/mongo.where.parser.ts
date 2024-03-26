@@ -1,101 +1,61 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import {
-  Mapper,
-  UnsupportedOperatorError,
-  Where,
-  WhereClause,
-  WhereOperator,
-} from '@soapjs/soap';
-import * as mongoDb from 'mongodb';
+import { WhereCondition, Condition, NestedCondition } from "@soapjs/soap";
 
-/**
- * Class for parsing Where clauses and converting them into MongoDB filter objects.
- */
 export class MongoWhereParser {
-  /**
-   * Map of Where operators to their corresponding MongoDB operators.
-   * @type {Object.<WhereOperator, string | Object>}
-   * @private
-   */
-  private static operatorMap = {
-    [WhereOperator.isEq]: '$eq',
-    [WhereOperator.isNotEq]: '$ne',
-    [WhereOperator.isLt]: '$lt',
-    [WhereOperator.isLte]: '$lte',
-    [WhereOperator.isGt]: '$gt',
-    [WhereOperator.isGte]: '$gte',
-    [WhereOperator.isInRange]: '$in',
-    [WhereOperator.isNotInRange]: '$nin',
-    [WhereOperator.isBetween]: { $gte: NaN, $lte: NaN },
-    [WhereOperator.isIn]: '$in',
-    [WhereOperator.isNotIn]: '$nin',
-    [WhereOperator.isTrue]: '$eq',
-    [WhereOperator.isFalse]: '$eq',
-    [WhereOperator.is0]: '$eq',
-    [WhereOperator.is1]: '$eq',
-    [WhereOperator.isNull]: '$eq',
-    [WhereOperator.isNotNull]: '$ne',
-    [WhereOperator.isEmpty]: { $or: [{ $eq: '' }, { $eq: [] }, { $eq: {} }] },
-    [WhereOperator.isNotEmpty]: {
-      $and: [{ $ne: '' }, { $ne: [] }, { $ne: {} }],
-    },
-  };
-
-  /**
-   * Parses a Where clause or an object and converts it into a MongoDB filter object.
-   *
-   * @template T - The type of the resulting MongoDB filter object.
-   * @param {Where | unknown} where - The Where clause or object to parse.
-   * @returns {T} The parsed MongoDB filter object.
-   * @throws {Error} If the Where clause contains an unsupported operator.
-   */
-  public static parse<T = mongoDb.Filter<unknown>>(where: Where | unknown, mapper?: Mapper): T {
-    const query = {} as T;
-    if (where instanceof Where && where.isRaw) {
-      return where.result as T;
-    } else if (where instanceof Where && where.isRaw === false) {
-      const {
-        result: { groups, ...chain },
-      } = where;
-      for (const key in chain) {
-        const whereClauses = chain[key] as WhereClause[];
-
-        for (const whereClause of whereClauses) {
-          const queryPart = MongoWhereParser.parseClause(whereClause);
-          const keyQyery = query[key] ? query[key] : {};
-          query[key] = { ...keyQyery, ...queryPart };
-        }
-      }
-    } else {
-      const operator = Object.keys(where)[0];
-      const wheres = where[operator];
-
-      if (operator !== 'and' && operator !== 'or') {
-        throw new UnsupportedOperatorError(operator);
-      }
-
-      query['$' + operator] = wheres.map(where => this.parse(where, mapper));
+  static parse(whereCondition: WhereCondition | null): any {
+    if (!whereCondition) {
+      return {};
     }
 
-    return query;
+    if ("left" in whereCondition) {
+      // It's a simple condition
+      return MongoWhereParser.parseSimpleCondition(whereCondition);
+    } else if ("conditions" in whereCondition) {
+      // It's a nested condition
+      return MongoWhereParser.parseNestedCondition(whereCondition);
+    }
+
+    throw new Error("Invalid condition format");
   }
 
-  private static parseClause(
-    whereClause: WhereClause,
-  ) {
-    const { operator, value } = whereClause;
-    const mongoOperator = MongoWhereParser.operatorMap[operator];
-    if (!mongoOperator) {
-      throw new UnsupportedOperatorError(WhereOperator[operator]);
+  private static parseSimpleCondition(condition: Condition): any {
+    const { left, operator, right } = condition;
+    switch (operator) {
+      case "eq":
+        return { [left]: { $eq: right } };
+      case "ne":
+        return { [left]: { $ne: right } };
+      case "gt":
+        return { [left]: { $gt: right } };
+      case "lt":
+        return { [left]: { $lt: right } };
+      case "gte":
+        return { [left]: { $gte: right } };
+      case "lte":
+        return { [left]: { $lte: right } };
+      case "in":
+        return { [left]: { $in: right } };
+      case "nin":
+        return { [left]: { $nin: right } };
+      case "like":
+        return { [left]: { $regex: right, $options: "i" } }; // Assuming 'like' translates to a regex match
+      default:
+        throw new Error(`Unsupported operator ${operator}`);
     }
-    if (operator === WhereOperator.isEmpty || operator === WhereOperator.isNotEmpty) {
-      return mongoOperator;
-    } else if (operator === WhereOperator.isBetween) {
-      return { $gte: value[0], $lte: value[1] };
-    } else if (operator === WhereOperator.isNull) {
-      return { [mongoOperator]: null };
-    } else {
-      return { [mongoOperator]: value };
+  }
+
+  private static parseNestedCondition(nestedCondition: NestedCondition): any {
+    const { conditions, operator } = nestedCondition;
+    const parsedConditions = conditions.map((cond) =>
+      MongoWhereParser.parse(cond)
+    );
+
+    if (operator === "and") {
+      return { $and: parsedConditions };
+    } else if (operator === "or") {
+      return { $or: parsedConditions };
     }
+
+    throw new Error(`Unsupported logical operator ${operator}`);
   }
 }
