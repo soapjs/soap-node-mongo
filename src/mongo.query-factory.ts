@@ -46,7 +46,7 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createFindQuery(params: FindParams): MongoFindQueryParams {
     const { limit, offset, sort, where } = params;
-    const filter = where ? MongoWhereParser.parse(where.result) : {};
+    const filter = where ? MongoWhereParser.parse(where.build()) : {};
     const options: MongoDB.FindOptions = {};
 
     if (limit) {
@@ -71,7 +71,7 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createCountQuery(params: CountParams): MongoCountQueryParams {
     const { sort, where } = params;
-    const filter = where ? MongoWhereParser.parse(where.result) : {};
+    const filter = where ? MongoWhereParser.parse(where.build()) : {};
     const options: MongoDB.FindOptions = {};
 
     if (sort) {
@@ -118,7 +118,7 @@ export class MongoQueryFactory implements QueryFactory {
           filter: MongoDB.Filter<UpdateType>;
           update: MongoDB.UpdateFilter<UpdateType>;
         } = {
-          filter: MongoWhereParser.parse(where[i].result),
+          filter: MongoWhereParser.parse(where[i].build()),
           update: { $set: updates[i] } as MongoDB.UpdateFilter<UpdateType>,
         };
 
@@ -138,7 +138,7 @@ export class MongoQueryFactory implements QueryFactory {
 
       if (method === UpdateMethod.UpdateOne) {
         return {
-          filter: MongoWhereParser.parse(where[0].result),
+          filter: MongoWhereParser.parse(where[0].build()),
           update: { $set: updates[0] },
           options: {
             upsert: true,
@@ -147,7 +147,7 @@ export class MongoQueryFactory implements QueryFactory {
         };
       } else if (method === UpdateMethod.UpdateMany) {
         return {
-          filter: MongoWhereParser.parse(where[0].result),
+          filter: MongoWhereParser.parse(where[0].build()),
           update: { $set: updates[0] },
           method,
         };
@@ -164,7 +164,7 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createRemoveQuery(params: RemoveParams): MongoDeleteQueryParams {
     const { where } = params;
-    const filter = where ? MongoWhereParser.parse(where.result) : {};
+    const filter = where ? MongoWhereParser.parse(where.build()) : {};
     const options: MongoDB.DeleteOptions = {};
 
     return { filter, options };
@@ -189,7 +189,7 @@ export class MongoQueryFactory implements QueryFactory {
 
     if (where) {
       pipeline.push({
-        $match: MongoWhereParser.parse(where.result),
+        $match: MongoWhereParser.parse(where.build()),
       });
     }
 

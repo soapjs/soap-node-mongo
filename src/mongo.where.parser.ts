@@ -1,27 +1,29 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import {
-  WhereCondition,
   Condition,
   NestedCondition,
   Where,
+  VariedCondition,
 } from "@soapjs/soap";
 
 export class MongoWhereParser {
-  static parse(data: Where | WhereCondition | null): any {
+  static parse(data: Where | Condition | VariedCondition | null): any {
     if (!data) {
       return {};
     }
 
     if (data instanceof Where) {
-      return MongoWhereParser.parse(data.result);
+      return MongoWhereParser.parse(data.build());
     }
 
-    if ("left" in data) {
+    if (data instanceof Condition) {
       // It's a simple condition
       return MongoWhereParser.parseSimpleCondition(data);
-    } else if ("conditions" in data) {
-      // It's a nested condition
-      return MongoWhereParser.parseNestedCondition(data);
+    }
+
+    if (data instanceof VariedCondition) {
+      // It's a varied condition
+      return MongoWhereParser.parseVariedCondition(data);
     }
 
     throw new Error("Invalid condition format");
@@ -53,8 +55,8 @@ export class MongoWhereParser {
     }
   }
 
-  private static parseNestedCondition(nestedCondition: NestedCondition): any {
-    const { conditions, operator } = nestedCondition;
+  private static parseVariedCondition(data: VariedCondition): any {
+    const { conditions, operator } = data;
     const parsedConditions = conditions.map((cond) =>
       MongoWhereParser.parse(cond)
     );
