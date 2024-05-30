@@ -5,6 +5,8 @@ import {
   Where,
   VariedCondition,
 } from "@soapjs/soap";
+import { IdType } from "@soapjs/soap/build/architecture/domain/id-type";
+import { ObjectId } from "mongodb";
 
 export class MongoWhereParser {
   static parse(data: Where | Condition | VariedCondition | null): any {
@@ -29,8 +31,35 @@ export class MongoWhereParser {
     throw new Error("Invalid condition format");
   }
 
+  private static ensureObjectId(item: any) {
+    if (Array.isArray(item)) {
+      return item.map((v) => this.ensureObjectId(v));
+    }
+
+    if (typeof item === "string") {
+      return new ObjectId(item);
+    }
+
+    if (typeof item === "object") {
+      Object.keys(item).forEach((key) => {
+        item[key] = this.ensureObjectId(item[key]);
+      });
+    }
+
+    return item;
+  }
+
   private static parseSimpleCondition(condition: Condition): any {
-    const { left, operator, right } = condition;
+    let { left, operator, right } = condition;
+
+    if (left === "id" || left === "_id") {
+      left = "_id";
+      right = this.ensureObjectId(right);
+    } else if (left.startsWith(IdType.prefix)) {
+      left = left.replace(IdType.prefix, "");
+      right = this.ensureObjectId(right);
+    }
+
     switch (operator) {
       case "eq":
         return { [left]: { $eq: right } };
