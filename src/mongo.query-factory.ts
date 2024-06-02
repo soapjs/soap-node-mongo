@@ -2,8 +2,10 @@
 import {
   AggregationParams,
   CountParams,
+  FieldInfo,
+  FieldResolver,
   FindParams,
-  Mapper,
+  ModelConstructor,
   QueryFactory,
   RemoveParams,
   UpdateMethod,
@@ -22,11 +24,21 @@ import {
   InconsistentUpdateParamsError,
   UnknownUpdateMethodError,
 } from "./mongo.errors";
+import { MongoFieldResolver } from "./mongo.field-resolver";
+
+type QueryFactoryOptions<T> = {
+  modelClass?: ModelConstructor<T>;
+  modelFieldMappings?: {
+    [key: string]: FieldInfo;
+  };
+};
 
 /**
  * Represents a MongoDB query factory for constructing various types of queries.
  */
-export class MongoQueryFactory implements QueryFactory {
+export class MongoQueryFactory<T> implements QueryFactory {
+  protected fieldResolver: MongoFieldResolver<T>;
+
   /**
    * Constructs a new instance of the MongoQueryBuilders class.
    *
@@ -35,9 +47,11 @@ export class MongoQueryFactory implements QueryFactory {
    * in situations where the case of keys or format of values in the original entity
    * doesn't match MongoDB's requirements.
    *
-   * @param {Mapper} [mapper] - An optional Mapper instance for entity key and value conversion.
+   * @param {QueryFactoryOptions<T>} [options] - Options for query factory.
    */
-  constructor(private mapper?: Mapper) {}
+  constructor(options?: QueryFactoryOptions<T>) {
+    this.fieldResolver = new MongoFieldResolver<T>(options);
+  }
 
   /**
    * Builds a find query for MongoDB.
@@ -46,7 +60,10 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createFindQuery(params: FindParams): MongoFindQueryParams {
     const { limit, offset, sort, where } = params;
-    const filter = where ? MongoWhereParser.parse(where.build()) : {};
+
+    const filter = where
+      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
+      : {};
     const options: MongoDB.FindOptions = {};
 
     if (limit) {
@@ -54,7 +71,7 @@ export class MongoQueryFactory implements QueryFactory {
     }
 
     if (sort) {
-      options.sort = sort as MongoDB.Sort;
+      options.sort = this.fieldResolver.resolve(sort) as MongoDB.Sort;
     }
 
     if (Number.isFinite(offset)) {
@@ -71,11 +88,13 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createCountQuery(params: CountParams): MongoCountQueryParams {
     const { sort, where } = params;
-    const filter = where ? MongoWhereParser.parse(where.build()) : {};
+    const filter = where
+      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
+      : {};
     const options: MongoDB.FindOptions = {};
 
     if (sort) {
-      options.sort = sort as MongoDB.Sort;
+      options.sort = this.fieldResolver.resolve(sort) as MongoDB.Sort;
     }
 
     return { filter, options };
@@ -112,14 +131,17 @@ export class MongoQueryFactory implements QueryFactory {
 
       return methods.map((method, i) => {
         const isUpdateOne = method === UpdateMethod.UpdateOne;
-
         const operationParams: {
           upsert?: boolean;
           filter: MongoDB.Filter<UpdateType>;
           update: MongoDB.UpdateFilter<UpdateType>;
         } = {
-          filter: MongoWhereParser.parse(where[i].build()),
-          update: { $set: updates[i] } as MongoDB.UpdateFilter<UpdateType>,
+          filter: MongoWhereParser.parse(
+            this.fieldResolver.resolve(where[i].build())
+          ),
+          update: {
+            $set: this.fieldResolver.resolve(updates[i]),
+          } as MongoDB.UpdateFilter<UpdateType>,
         };
 
         if (isUpdateOne) {
@@ -138,8 +160,10 @@ export class MongoQueryFactory implements QueryFactory {
 
       if (method === UpdateMethod.UpdateOne) {
         return {
-          filter: MongoWhereParser.parse(where[0].build()),
-          update: { $set: updates[0] },
+          filter: MongoWhereParser.parse(
+            this.fieldResolver.resolve(where[0].build())
+          ),
+          update: { $set: this.fieldResolver.resolve(updates[0]) },
           options: {
             upsert: true,
           },
@@ -147,8 +171,10 @@ export class MongoQueryFactory implements QueryFactory {
         };
       } else if (method === UpdateMethod.UpdateMany) {
         return {
-          filter: MongoWhereParser.parse(where[0].build()),
-          update: { $set: updates[0] },
+          filter: MongoWhereParser.parse(
+            this.fieldResolver.resolve(where[0].build())
+          ),
+          update: { $set: this.fieldResolver.resolve(updates[0]) },
           method,
         };
       } else {
@@ -164,7 +190,9 @@ export class MongoQueryFactory implements QueryFactory {
    */
   public createRemoveQuery(params: RemoveParams): MongoDeleteQueryParams {
     const { where } = params;
-    const filter = where ? MongoWhereParser.parse(where.build()) : {};
+    const filter = where
+      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
+      : {};
     const options: MongoDB.DeleteOptions = {};
 
     return { filter, options };
@@ -183,13 +211,16 @@ export class MongoQueryFactory implements QueryFactory {
     const groupBy = params.groupBy || [];
 
     const groupByFields = groupBy.reduce((acc, field) => {
-      acc[field] = `$${field}`;
+      const parsed = this.fieldResolver.resolveDatabaseField(field);
+      acc[parsed.name] = `$${parsed.name}`;
       return acc;
     }, {});
 
     if (where) {
       pipeline.push({
-        $match: MongoWhereParser.parse(where.build()),
+        $match: MongoWhereParser.parse(
+          this.fieldResolver.resolve(where.build())
+        ),
       });
     }
 
@@ -210,17 +241,19 @@ export class MongoQueryFactory implements QueryFactory {
 
     if (sort) {
       pipeline.push({
-        $sort: sort as MongoDB.Sort,
+        $sort: this.fieldResolver.resolve(sort) as MongoDB.Sort,
       });
     }
 
     if (filterBy) {
       pipeline.push({
-        $match: MongoWhereParser.parse({
-          left: filterBy.name,
-          operator: "eq",
-          right: filterBy.field,
-        }),
+        $match: MongoWhereParser.parse(
+          this.fieldResolver.resolve({
+            left: filterBy.name,
+            operator: "eq",
+            right: filterBy.field,
+          })
+        ),
       });
     }
 

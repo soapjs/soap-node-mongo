@@ -1,8 +1,8 @@
-import { UpdateMethod } from "@soapjs/soap";
+import * as Soap from "@soapjs/soap";
 import * as mongoDb from "mongodb";
 
-export type CollectionOptions = {
-  indexes: mongoDb.IndexDescription[];
+export type CollectionOptions<T> = Soap.SourceOptions<T> & {
+  indexes?: mongoDb.IndexDescription[];
 };
 
 export type MongoAggregateParams = {
@@ -19,7 +19,7 @@ export type MongoUpdateQueryParams<T = unknown> = {
   filter: mongoDb.Filter<T>;
   update: mongoDb.UpdateFilter<T>;
   options?: mongoDb.UpdateOptions;
-  method?: UpdateMethod;
+  method?: Soap.UpdateMethod;
 };
 
 export type MongoCountQueryParams<T = unknown> = {

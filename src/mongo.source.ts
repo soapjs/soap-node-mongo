@@ -41,7 +41,8 @@ export class MongoSource<T> implements Source<T> {
   protected collection: mongoDb.Collection<T>;
   protected currentSession: mongoDb.ClientSession;
   protected moduleVersion: MongoModuleVersion;
-
+  protected _queries: MongoQueryFactory<T>;
+  protected _indexes: mongoDb.IndexDescription[];
   /**
    * Constructs a new MongoCollection.
    * @constructor
@@ -52,9 +53,18 @@ export class MongoSource<T> implements Source<T> {
   constructor(
     protected client: SoapMongo,
     public readonly collectionName: string,
-    public readonly queries: MongoQueryFactory = new MongoQueryFactory(),
-    protected options?: CollectionOptions
+    options?: CollectionOptions<T>
   ) {
+    if (options) {
+      this._indexes = options.indexes || [];
+      this._queries =
+        (options.queries as MongoQueryFactory<T>) ||
+        new MongoQueryFactory<T>(options);
+    } else {
+      this._indexes = [];
+      this._queries = new MongoQueryFactory();
+    }
+
     this.collection = this.client.database.collection<T>(collectionName);
     this.moduleVersion = MongoModuleVersion.create(
       MongoUtils.getMongoModuleVersion()
@@ -93,18 +103,14 @@ export class MongoSource<T> implements Source<T> {
    */
   private async createIndexes(): Promise<void> {
     try {
-      if (this.options?.indexes.length > 0) {
-        const {
-          options: { indexes },
-        } = this;
-
+      if (this._indexes.length > 0) {
         await this.createCollection();
 
         const cursor = this.collection.listIndexes();
         const currentIndexes = await cursor.toArray();
 
         if (currentIndexes.length < 2) {
-          await this.collection.createIndexes(indexes);
+          await this.collection.createIndexes(this._indexes);
         }
       }
     } catch (error) {
@@ -149,7 +155,7 @@ export class MongoSource<T> implements Source<T> {
   ): Promise<T[]> {
     try {
       const query = FindParams.isFindParams(params)
-        ? this.queries.createFindQuery(params)
+        ? this._queries.createFindQuery(params)
         : params;
       const filter = query?.filter || {};
       const options = query?.options || {};
@@ -172,7 +178,7 @@ export class MongoSource<T> implements Source<T> {
   ): Promise<number> {
     try {
       const query = CountParams.isCountParams(params)
-        ? this.queries.createCountQuery(params)
+        ? this._queries.createCountQuery(params)
         : params;
       const filter = query?.filter || {};
       const options = query?.options || {};
@@ -193,7 +199,7 @@ export class MongoSource<T> implements Source<T> {
   ): Promise<AggregationType[]> {
     try {
       const query = AggregationParams.isAggregationParams(params)
-        ? this.queries.createAggregationQuery(params)
+        ? this._queries.createAggregationQuery(params)
         : params;
 
       const { pipeline, options } = query;
@@ -227,7 +233,7 @@ export class MongoSource<T> implements Source<T> {
 
       if (UpdateParams.isUpdateParams(params)) {
         const { updates, where, methods } = params;
-        query = this.queries.createUpdateQuery(updates, where, methods);
+        query = this._queries.createUpdateQuery(updates, where, methods);
       } else {
         query = params;
       }
@@ -351,8 +357,9 @@ export class MongoSource<T> implements Source<T> {
   ): Promise<RemoveStats> {
     try {
       const query = RemoveParams.isRemoveParams(params)
-        ? this.queries.createRemoveQuery(params)
+        ? this._queries.createRemoveQuery(params)
         : params;
+
       const { acknowledged, deletedCount } = await this.collection.deleteMany(
         query.filter
       );

@@ -20,7 +20,7 @@ export class MongoUtils {
       options["authMechanism"] = authMechanism || "DEFAULT";
     }
     const hosts = config?.hosts?.length ? config.hosts : ["localhost"];
-    const ports = config?.ports?.length ? config.ports : ["27017"];
+    const ports = config?.ports?.length ? config.ports : [27017];
     const defaultPort = ports[0];
 
     let hostsPortsDiff = hosts.length - ports.length;

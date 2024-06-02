@@ -32,7 +32,7 @@ export class MongoConfig {
   constructor(
     public readonly database: string,
     public readonly hosts: string[],
-    public readonly ports?: string[],
+    public readonly ports?: (number | string)[],
     public readonly user?: string,
     public readonly password?: string,
     public readonly authMechanism?: string,
