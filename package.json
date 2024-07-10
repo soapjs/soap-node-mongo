@@ -1,6 +1,6 @@
 {
   "name": "@soapjs/soap-node-mongo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Seamless MongoDB integration for SoapJS projects, facilitating clean architecture practices and streamlined database interactions.",
   "homepage": "https://docs.soapjs.com",
   "repository": "https://github.com/soapjs/soap-node-mongo",
@@ -23,7 +23,7 @@
     "typescript": "^4.8.2"
   },
   "peerDependencies": {
-    "@soapjs/soap": "^0.3.1",
+    "@soapjs/soap": ">=0.3.5",
     "mongodb": ">=4.9.0"
   }
 }

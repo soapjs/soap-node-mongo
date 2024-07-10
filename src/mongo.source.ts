@@ -380,6 +380,38 @@ export class MongoSource<T> implements Source<T> {
   }
 
   /**
+   * Starts a session on the current session.
+   * @param {SessionOptions} [options] - The session options.
+   * @returns {Promise<void>} - A promise that resolves when the session starts.
+   */
+  public async startSession(
+    options?: mongoDb.ClientSessionOptions
+  ): Promise<mongoDb.ClientSession> {
+    try {
+      if (this.currentSession) {
+        throw CollectionError.createError(new PendingSessionError());
+      }
+
+      this.currentSession = this.client.client.startSession(options);
+    } catch (error) {
+      throw CollectionError.createError(new SessionError(error));
+    }
+
+    return this.currentSession;
+  }
+
+  /**
+   * Ends a session on the current session.
+   * @param {SessionOptions} [options] - The session options.
+   * @returns {Promise<void>} - A promise that resolves when the session ends.
+   */
+  public async endSession(): Promise<void> {
+    if (this.currentSession) {
+      this.currentSession = null;
+    }
+  }
+
+  /**
    * Starts a transaction on the current session.
    * @param {TransactionOptions} [options] - The transaction options.
    * @returns {Promise<void>} - A promise that resolves when the transaction starts.
