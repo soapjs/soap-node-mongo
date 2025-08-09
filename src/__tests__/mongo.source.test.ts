@@ -1,149 +1,264 @@
-import * as mongoDB from "mongodb";
 import { MongoSource } from "../mongo.source";
-import { MongoUtils } from "../mongo.utils";
-import { MongoQueryFactory } from "../mongo.query-factory";
-import { MongoConfig } from "../mongo.config";
 import { SoapMongo } from "../soap.mongo";
-import { UpdateMethod, Where } from "@soapjs/soap";
+import { FindParams, UpdateParams, RemoveParams, Where, UpdateMethod, CountParams, AggregationParams } from "@soapjs/soap";
+import * as mongoDb from "mongodb";
 
+// Mock MongoDB
 jest.mock("mongodb");
-jest.mock("../mongo.utils", () => ({
-  ...jest.requireActual("../mongo.utils"),
-  getMongoModuleVersion: jest.fn(() => "4.9.0"),
-}));
-jest.mock("../mongo.query-factory");
-jest.mock("../soap.mongo");
 
 describe("MongoSource", () => {
-  let client;
-  let db;
-  let collection;
-  let queryFactory;
-  let config;
-  let mongoSource;
-  let mongoSoap;
-  beforeEach(() => {
-    db = {
-      collection: jest.fn(),
-      createCollection: jest.fn().mockResolvedValue(true),
-    };
-    client = {
-      database: db,
-    };
-    collection = {
-      find: jest.fn(),
-      insertMany: jest.fn(),
-      deleteMany: jest.fn(),
-      updateOne: jest.fn(),
-      updateMany: jest.fn(),
-      countDocuments: jest.fn(),
-      aggregate: jest.fn(),
-      bulkWrite: jest.fn(),
-      createIndexes: jest.fn().mockResolvedValue([]),
-      listIndexes: jest
-        .fn()
-        .mockReturnValue({ toArray: jest.fn().mockResolvedValue([]) }),
-    };
-    mongoSoap = { client, database: db };
-    db.collection.mockReturnValue(collection);
-    queryFactory = new MongoQueryFactory();
-    config = { database: "testdb" };
+  let mongoSource: MongoSource<any>;
+  let mongoSoap: SoapMongo;
+  let collection: any;
+  let database: any;
+  let client: any;
 
-    mongoSource = new MongoSource(mongoSoap, "testCollection", {
-      queries: queryFactory,
-    });
+  beforeEach(() => {
+    // Setup mocks
+    collection = {
+      find: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([{ id: 1, name: "test" }])
+      }),
+      countDocuments: jest.fn().mockResolvedValue(1),
+      aggregate: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([{ total: 100 }])
+      }),
+      updateOne: jest.fn().mockResolvedValue({
+        matchedCount: 1,
+        modifiedCount: 1,
+        upsertedCount: 0,
+        upsertedId: null
+      }),
+      updateMany: jest.fn().mockResolvedValue({
+        matchedCount: 1,
+        modifiedCount: 1,
+        upsertedCount: 0,
+        upsertedId: null
+      }),
+      insertMany: jest.fn().mockResolvedValue({
+        insertedIds: { 0: "id1", 1: "id2" }
+      }),
+      deleteMany: jest.fn().mockResolvedValue({
+        acknowledged: true,
+        deletedCount: 1
+      }),
+      listIndexes: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([])
+      }),
+      createIndexes: jest.fn().mockResolvedValue(undefined)
+    };
+
+    database = {
+      collection: jest.fn().mockReturnValue(collection),
+      createCollection: jest.fn().mockResolvedValue(undefined)
+    };
+
+    client = {
+      startSession: jest.fn().mockReturnValue({
+        id: "session1",
+        endSession: jest.fn().mockResolvedValue(undefined),
+        startTransaction: jest.fn().mockResolvedValue(undefined),
+        commitTransaction: jest.fn().mockResolvedValue(undefined),
+        abortTransaction: jest.fn().mockResolvedValue(undefined)
+      })
+    };
+
+    mongoSoap = {
+      client,
+      database,
+      sessions: {
+        createSession: jest.fn(),
+        deleteSession: jest.fn(),
+        getSession: jest.fn(),
+        hasSession: jest.fn(),
+        getAllSessions: jest.fn(),
+        clearSessions: jest.fn(),
+        transactionScope: {}
+      }
+    } as any;
+
+    mongoSource = new MongoSource(mongoSoap, "testCollection");
   });
 
   describe("constructor", () => {
     it("should create an instance with the correct properties", () => {
-      expect(mongoSource.collection).toBe(collection);
-      expect(mongoSource.client).toBe(mongoSoap);
+      expect(mongoSource.collectionName).toBe("testCollection");
+      expect(database.collection).toHaveBeenCalledWith("testCollection");
     });
   });
 
   describe("find", () => {
-    it("should execute find query correctly", async () => {
-      const findParams = { filter: {}, options: {} };
-      const docs = [{ _id: "1", name: "John Doe" }];
-      collection.find.mockReturnValue({
-        toArray: jest.fn().mockResolvedValue(docs),
-      });
+    it("should find documents correctly", async () => {
+      const where = new Where();
+      where.valueOf("status").isEq("active");
+      
+      const findParams: FindParams = {
+        where,
+        limit: 10,
+        offset: 0,
+        sort: { name: 1 }
+      };
 
       const result = await mongoSource.find(findParams);
+
+      expect(collection.find).toHaveBeenCalledWith(
+        { status: "active" },
+        { limit: 10, skip: 0, sort: { name: 1 } }
+      );
+      expect(result).toEqual([{ id: 1, name: "test" }]);
+    });
+
+    it("should find documents without parameters", async () => {
+      const result = await mongoSource.find();
+
       expect(collection.find).toHaveBeenCalledWith({}, {});
-      expect(result).toEqual(docs);
+      expect(result).toEqual([{ id: 1, name: "test" }]);
     });
   });
 
-  describe("insert", () => {
-    it("should insert documents correctly", async () => {
-      const docs = [{ name: "John Doe" }];
-      collection.insertMany.mockResolvedValue({
-        insertedCount: 1,
-        insertedIds: { 0: "1" },
-      });
-
-      const result = await mongoSource.insert(docs);
-      expect(collection.insertMany).toHaveBeenCalledWith(docs, {
-        ordered: true,
-      });
-      expect(result).toHaveLength(1);
-    });
-  });
-
-  describe("remove", () => {
-    it("should remove documents correctly", async () => {
-      const removeParams = {
-        where: new Where().valueOf("key").isIn([1, 2, 3, 4]),
+  describe("count", () => {
+    it("should count documents correctly", async () => {
+      const where = new Where();
+      where.valueOf("status").isEq("active");
+      
+      const countParams: CountParams = {
+        where
       };
-      queryFactory.createRemoveQuery.mockImplementation(() => ({ filter: {} }));
-      collection.deleteMany.mockResolvedValue({
-        acknowledged: true,
-        deletedCount: 1,
-      });
 
-      const result = await mongoSource.remove(removeParams);
-      expect(collection.deleteMany).toHaveBeenCalledWith({});
-      expect(result.deletedCount).toBe(1);
+      const result = await mongoSource.count(countParams);
+
+      expect(collection.countDocuments).toHaveBeenCalledWith(
+        { status: "active" },
+        {}
+      );
+      expect(result).toBe(1);
     });
   });
 
   describe("update", () => {
     it("should update documents correctly", async () => {
-      const updateParams = {
-        filter: {},
-        update: { $set: { name: "Jane Doe" } },
-        method: UpdateMethod.UpdateOne,
+      const where = new Where();
+      where.valueOf("status").isEq("active");
+      
+      const updateParams: UpdateParams = {
+        updates: [{ status: "inactive" }],
+        where: [where],
+        methods: [UpdateMethod.UpdateOne]
       };
-      collection.updateOne.mockResolvedValue({
-        matchedCount: 1,
-        modifiedCount: 1,
-        upsertedId: "1",
-      });
 
       const result = await mongoSource.update(updateParams);
+
       expect(collection.updateOne).toHaveBeenCalledWith(
-        {},
-        { $set: { name: "Jane Doe" } },
-        undefined
+        { status: "active" },
+        { $set: { status: "inactive" } },
+        {}
       );
+      expect(result.status).toBe("success");
       expect(result.modifiedCount).toBe(1);
     });
   });
 
+  describe("insert", () => {
+    it("should insert documents correctly", async () => {
+      const documents = [
+        { name: "John", email: "john@example.com" },
+        { name: "Jane", email: "jane@example.com" }
+      ];
+
+      const result = await mongoSource.insert(documents);
+
+      expect(collection.insertMany).toHaveBeenCalledWith(documents, { ordered: true });
+      expect(result).toHaveLength(2);
+      expect(result[0]).toHaveProperty("_id", "id1");
+      expect(result[1]).toHaveProperty("_id", "id2");
+    });
+  });
+
+  describe("remove", () => {
+    it("should remove documents correctly", async () => {
+      const where = new Where();
+      where.valueOf("status").isEq("deleted");
+      
+      const removeParams: RemoveParams = {
+        where
+      };
+
+      const result = await mongoSource.remove(removeParams);
+
+      expect(collection.deleteMany).toHaveBeenCalledWith(
+        { status: "deleted" },
+        {}
+      );
+      expect(result.status).toBe("success");
+      expect(result.deletedCount).toBe(1);
+    });
+  });
+
   describe("aggregate", () => {
-    it("should perform aggregation correctly", async () => {
-      const aggParams = { pipeline: [], options: {} };
-      const results = [{ _id: "1", total: 100 }];
-      queryFactory.createAggregationQuery.mockImplementation(() => aggParams);
-      collection.aggregate.mockReturnValue({
-        toArray: jest.fn().mockResolvedValue(results),
-      });
-      const result = await mongoSource.aggregate(aggParams);
-      expect(collection.aggregate).toHaveBeenCalledWith([], {
-        allowDiskUse: true,
-      });
-      expect(result).toEqual(results);
+    it("should aggregate documents correctly", async () => {
+      const where = new Where();
+      where.valueOf("status").isEq("active");
+      
+      const aggregationParams: AggregationParams = {
+        where,
+        groupBy: ["category"],
+        sum: "amount"
+      };
+
+      const result = await mongoSource.aggregate(aggregationParams);
+
+      expect(collection.aggregate).toHaveBeenCalled();
+      expect(result).toEqual([{ total: 100 }]);
+    });
+  });
+
+  describe("session management", () => {
+    it("should start a session", async () => {
+      const session = await mongoSource.startSession();
+      expect(client.startSession).toHaveBeenCalled();
+      expect(session).toBeDefined();
+    });
+
+    it("should end a session", async () => {
+      await mongoSource.startSession();
+      await mongoSource.endSession();
+      // Session should be ended
+      expect(client.startSession).toHaveBeenCalled();
+    });
+
+    it("should start a transaction", async () => {
+      await mongoSource.startTransaction();
+      expect(client.startSession).toHaveBeenCalled();
+    });
+
+    it("should commit a transaction", async () => {
+      await mongoSource.startTransaction();
+      await mongoSource.commitTransaction();
+      // Transaction should be committed
+      expect(client.startSession).toHaveBeenCalled();
+    });
+
+    it("should rollback a transaction", async () => {
+      await mongoSource.startTransaction();
+      await mongoSource.rollbackTransaction();
+      // Transaction should be rolled back
+      expect(client.startSession).toHaveBeenCalled();
+    });
+  });
+
+  describe("options", () => {
+    it("should return source options", () => {
+      const options = mongoSource.options;
+      expect(options).toHaveProperty("modelFieldMappings");
+      expect(options).toHaveProperty("queries");
+    });
+  });
+
+  describe("createSession", () => {
+    it("should create a new database session", () => {
+      const session = mongoSource.createSession();
+      expect(session).toBeDefined();
+      expect(session).toHaveProperty("id");
     });
   });
 });

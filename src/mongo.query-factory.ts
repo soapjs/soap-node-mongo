@@ -1,263 +1,219 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import {
-  AggregationParams,
-  CountParams,
-  FieldInfo,
-  FieldResolver,
+  DbQueryFactory,
   FindParams,
-  ModelConstructor,
-  QueryFactory,
+  CountParams,
+  AggregationParams,
+  UpdateParams,
   RemoveParams,
   UpdateMethod,
   Where,
+  DbQuery
 } from "@soapjs/soap";
-import {
-  MongoAggregateParams,
-  MongoCountQueryParams,
-  MongoDeleteQueryParams,
-  MongoFindQueryParams,
-  MongoUpdateQueryParams,
-} from "./mongo.types";
-import * as MongoDB from "mongodb";
+import * as mongoDb from "mongodb";
 import { MongoWhereParser } from "./mongo.where.parser";
-import {
-  InconsistentUpdateParamsError,
-  UnknownUpdateMethodError,
-} from "./mongo.errors";
-import { MongoFieldResolver } from "./mongo.field-resolver";
-
-type QueryFactoryOptions<T> = {
-  modelClass?: ModelConstructor<T>;
-  modelFieldMappings?: {
-    [key: string]: FieldInfo;
-  };
-};
+import { CollectionOptions } from "./mongo.types";
 
 /**
- * Represents a MongoDB query factory for constructing various types of queries.
+ * MongoDB implementation of DbQueryFactory.
+ * @template T - The type of the document.
  */
-export class MongoQueryFactory<T> implements QueryFactory {
-  protected fieldResolver: MongoFieldResolver<T>;
+export class MongoQueryFactory<T> implements DbQueryFactory {
+  private whereParser: MongoWhereParser;
 
-  /**
-   * Constructs a new instance of the MongoQueryBuilders class.
-   *
-   * If a Mapper instance is provided, it can be used to convert entity keys
-   * and values into a format suitable for MongoDB. This can be especially useful
-   * in situations where the case of keys or format of values in the original entity
-   * doesn't match MongoDB's requirements.
-   *
-   * @param {QueryFactoryOptions<T>} [options] - Options for query factory.
-   */
-  constructor(options?: QueryFactoryOptions<T>) {
-    this.fieldResolver = new MongoFieldResolver<T>(options);
+  constructor(options?: CollectionOptions<T>) {
+    this.whereParser = new MongoWhereParser();
   }
 
   /**
-   * Builds a find query for MongoDB.
-   * @param {FindParams} params - The parameters for the find query.
-   * @returns {MongoFindQueryParams} The find query parameters.
+   * Creates a find query for MongoDB.
+   * @param {FindParams} params - The find parameters.
+   * @returns {DbQuery} The MongoDB find query.
    */
-  public createFindQuery(params: FindParams): MongoFindQueryParams {
-    const { limit, offset, sort, where } = params;
+  createFindQuery(params: FindParams, ...args: unknown[]): DbQuery {
+    const filter: mongoDb.Filter<mongoDb.Document> = {};
+    const options: mongoDb.FindOptions = {};
 
-    const filter = where
-      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
-      : {};
-    const options: MongoDB.FindOptions = {};
-
-    if (limit) {
-      options.limit = limit;
+    if (params.where) {
+      Object.assign(filter, this.whereParser.parse(params.where));
     }
 
-    if (sort) {
-      options.sort = this.fieldResolver.resolve(sort) as MongoDB.Sort;
+    if (params.limit) {
+      options.limit = params.limit;
     }
 
-    if (Number.isFinite(offset)) {
-      options.skip = offset;
+    if (params.offset !== undefined) {
+      options.skip = params.offset;
     }
 
-    return { filter, options };
+    if (params.sort) {
+      options.sort = params.sort as any;
+    }
+
+    if (params.projection) {
+      options.projection = params.projection as any;
+    }
+
+    return {
+      filter,
+      options,
+    } as DbQuery;
   }
 
   /**
-   * Builds a count query for MongoDB.
-   * @param {CountParams} params - The parameters for the count query.
-   * @returns {MongoCountQueryParams} The count query parameters.
+   * Creates a count query for MongoDB.
+   * @param {CountParams} params - The count parameters.
+   * @returns {DbQuery} The MongoDB count query.
    */
-  public createCountQuery(params: CountParams): MongoCountQueryParams {
-    const { sort, where } = params;
-    const filter = where
-      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
-      : {};
-    const options: MongoDB.FindOptions = {};
+  createCountQuery(params: CountParams, ...args: unknown[]): DbQuery {
+    const filter: mongoDb.Filter<mongoDb.Document> = {};
+    const options: mongoDb.CountDocumentsOptions = {};
 
-    if (sort) {
-      options.sort = this.fieldResolver.resolve(sort) as MongoDB.Sort;
+    if (params.where) {
+      Object.assign(filter, this.whereParser.parse(params.where));
     }
 
-    return { filter, options };
+    return {
+      filter,
+      options,
+    } as DbQuery;
   }
 
   /**
-   * Builds an update query for MongoDB.
-   * @template UpdateType - The type of the update operation.
-   * @param {UpdateType[]} updates - The updates to be performed.
-   * @param {Where[]} where - The conditions for updating documents.
-   * @param {UpdateMethod[]} methods - The update methods for each update operation.
-   * @returns {MongoUpdateQueryParams | MongoDB.AnyBulkWriteOperation<UpdateType>[]} The update query parameters or bulk write operations.
-   * @throws {InconsistentUpdateParamsError} If the number of updates, where clauses, and methods don't match.
-   * @throws {UnknownUpdateMethodError} If an unknown update method is provided.
+   * Creates an update query for MongoDB.
+   * @param {UpdateType[]} updates - The updates to apply.
+   * @param {Where[]} where - The where conditions.
+   * @param {UpdateMethod[]} methods - The update methods.
+   * @returns {DbQuery} The MongoDB update query.
    */
-  public createUpdateQuery<UpdateType = unknown>(
+  createUpdateQuery<UpdateType = unknown>(
     updates: UpdateType[],
     where: Where[],
-    methods: UpdateMethod[]
-  ): MongoUpdateQueryParams | MongoDB.AnyBulkWriteOperation<UpdateType>[] {
-    //
-    const updatesSize = updates.length;
-    const whereSize = where.length;
-    const methodsSize = methods.length;
-
-    if (methodsSize > 1) {
-      if ((methodsSize + updatesSize + whereSize) / 3 !== methodsSize) {
-        throw new InconsistentUpdateParamsError(
-          updatesSize,
-          whereSize,
-          methodsSize
-        );
-      }
-
-      return methods.map((method, i) => {
-        const isUpdateOne = method === UpdateMethod.UpdateOne;
-        const operationParams: {
-          upsert?: boolean;
-          filter: MongoDB.Filter<UpdateType>;
-          update: MongoDB.UpdateFilter<UpdateType>;
-        } = {
-          filter: MongoWhereParser.parse(
-            this.fieldResolver.resolve(where[i].build())
-          ),
-          update: {
-            $set: this.fieldResolver.resolve(updates[i]),
-          } as MongoDB.UpdateFilter<UpdateType>,
-        };
-
-        if (isUpdateOne) {
-          operationParams.upsert = true;
-          return {
-            updateOne: operationParams,
-          } as MongoDB.AnyBulkWriteOperation<UpdateType>;
-        }
-
-        return {
-          updateMany: operationParams,
-        } as MongoDB.AnyBulkWriteOperation<UpdateType>;
-      });
-    } else {
-      const method = methods[0];
-
-      if (method === UpdateMethod.UpdateOne) {
-        return {
-          filter: MongoWhereParser.parse(
-            this.fieldResolver.resolve(where[0].build())
-          ),
-          update: { $set: this.fieldResolver.resolve(updates[0]) },
-          options: {
-            upsert: true,
-          },
-          method,
-        };
-      } else if (method === UpdateMethod.UpdateMany) {
-        return {
-          filter: MongoWhereParser.parse(
-            this.fieldResolver.resolve(where[0].build())
-          ),
-          update: { $set: this.fieldResolver.resolve(updates[0]) },
-          method,
-        };
-      } else {
-        throw new UnknownUpdateMethodError(method);
-      }
+    methods: UpdateMethod[],
+    ...args: unknown[]
+  ): DbQuery {
+    if (updates.length !== where.length || updates.length !== methods.length) {
+      throw new Error("Updates, where conditions, and methods arrays must have the same length");
     }
-  }
 
-  /**
-   * Builds a remove query for MongoDB.
-   * @param {RemoveParams} params - The parameters for the remove query.
-   * @returns {MongoDeleteQueryParams} The remove query parameters.
-   */
-  public createRemoveQuery(params: RemoveParams): MongoDeleteQueryParams {
-    const { where } = params;
-    const filter = where
-      ? MongoWhereParser.parse(this.fieldResolver.resolve(where.build()))
-      : {};
-    const options: MongoDB.DeleteOptions = {};
+    const filter: mongoDb.Filter<mongoDb.Document> = {};
+    const update: mongoDb.UpdateFilter<mongoDb.Document> = {};
+    const options: mongoDb.UpdateOptions = {};
 
-    return { filter, options };
-  }
-
-  /**
-   * Builds an aggregation query for MongoDB.
-   * @param {AggregationParams} params - The parameters for the aggregation query.
-   * @returns {MongoAggregateParams} The aggregation query parameters.
-   */
-  public createAggregationQuery(
-    params: AggregationParams
-  ): MongoAggregateParams {
-    const { filterBy, sort, sum, average, min, max, count, where } = params;
-    const pipeline = [];
-    const groupBy = params.groupBy || [];
-
-    const groupByFields = groupBy.reduce((acc, field) => {
-      const parsed = this.fieldResolver.resolveDatabaseField(field);
-      acc[parsed.name] = `$${parsed.name}`;
-      return acc;
+    // Combine all where conditions with AND
+    const combinedWhere = where.reduce((acc, curr) => {
+      return { ...acc, ...this.whereParser.parse(curr) };
     }, {});
 
-    if (where) {
-      pipeline.push({
-        $match: MongoWhereParser.parse(
-          this.fieldResolver.resolve(where.build())
-        ),
-      });
+    Object.assign(filter, combinedWhere);
+
+    // Combine all updates
+    const combinedUpdate = updates.reduce((acc, curr) => {
+      return { ...acc, ...curr };
+    }, {});
+
+    Object.assign(update, { $set: combinedUpdate });
+
+    // Set options based on methods
+    if (methods.includes(UpdateMethod.UpdateMany)) {
+      // In newer MongoDB versions, multi is deprecated, use updateMany instead
+      // options.multi = true; // This is deprecated
     }
 
-    if (groupBy.length > 0) {
-      const group = {
-        _id: groupByFields,
-        ...(sum && { totalSum: { $sum: `$${sum}` } }),
-        ...(average && { average: { $avg: `$${average}` } }),
-        ...(min && { min: { $min: `$${min}` } }),
-        ...(max && { max: { $max: `$${max}` } }),
-        ...(count && { count: { $sum: 1 } }),
-      };
-
-      pipeline.push({
-        $group: group,
-      });
+    if (methods.includes(UpdateMethod.UpdateOne)) {
+      // For UpdateOne, we don't need to set any special options
     }
 
-    if (sort) {
-      pipeline.push({
-        $sort: this.fieldResolver.resolve(sort) as MongoDB.Sort,
-      });
+    return {
+      filter,
+      update,
+      options,
+    } as DbQuery;
+  }
+
+  /**
+   * Creates a remove query for MongoDB.
+   * @param {RemoveParams} params - The remove parameters.
+   * @returns {DbQuery} The MongoDB remove query.
+   */
+  createRemoveQuery(params: RemoveParams, ...args: unknown[]): DbQuery {
+    const filter: mongoDb.Filter<mongoDb.Document> = {};
+    const options: mongoDb.DeleteOptions = {};
+
+    if (params.where) {
+      Object.assign(filter, this.whereParser.parse(params.where));
     }
 
-    if (filterBy) {
-      pipeline.push({
-        $match: MongoWhereParser.parse(
-          this.fieldResolver.resolve({
-            left: filterBy.name,
-            operator: "eq",
-            right: filterBy.field,
-          })
-        ),
-      });
+    return {
+      filter,
+      options,
+    } as DbQuery;
+  }
+
+  /**
+   * Creates an aggregation query for MongoDB.
+   * @param {AggregationParams} params - The aggregation parameters.
+   * @returns {DbQuery} The MongoDB aggregation query.
+   */
+  createAggregationQuery(params: AggregationParams, ...args: unknown[]): DbQuery {
+    const pipeline: mongoDb.Document[] = [];
+    const options: mongoDb.AggregateOptions = {};
+
+    if (params.where) {
+      const filter = this.whereParser.parse(params.where);
+      pipeline.push({ $match: filter });
     }
 
-    const options: MongoDB.AggregateOptions = {};
-    return { pipeline, options };
+    if (params.groupBy) {
+      const groupStage: any = { $group: { _id: {} } };
+      
+      if (Array.isArray(params.groupBy)) {
+        params.groupBy.forEach(field => {
+          groupStage.$group._id[field] = `$${field}`;
+        });
+      } else {
+        groupStage.$group._id = `$${params.groupBy}`;
+      }
+
+      // Add aggregation functions
+      if (params.sum) {
+        groupStage.$group[params.sum] = { $sum: `$${params.sum}` };
+      }
+      if (params.average) {
+        groupStage.$group[params.average] = { $avg: `$${params.average}` };
+      }
+      if (params.min) {
+        groupStage.$group[params.min] = { $min: `$${params.min}` };
+      }
+      if (params.max) {
+        groupStage.$group[params.max] = { $max: `$${params.max}` };
+      }
+      if (params.count) {
+        groupStage.$group[params.count] = { $sum: 1 };
+      }
+
+      pipeline.push(groupStage);
+    }
+
+    if (params.having) {
+      pipeline.push({ $match: params.having });
+    }
+
+    if (params.sort) {
+      pipeline.push({ $sort: params.sort });
+    }
+
+    if (params.limit) {
+      pipeline.push({ $limit: params.limit });
+    }
+
+    if (params.offset) {
+      pipeline.push({ $skip: params.offset });
+    }
+
+    return {
+      pipeline,
+      options,
+    } as DbQuery;
   }
 }

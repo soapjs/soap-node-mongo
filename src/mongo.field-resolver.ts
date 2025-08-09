@@ -1,84 +1,165 @@
-import {
-  Condition,
-  FieldInfo,
-  FieldResolver,
-  ModelConstructor,
-  VariedCondition,
-} from "@soapjs/soap";
+import { PropertyInfo } from "@soapjs/soap";
 
 /**
- * A class to resolve fields from domain-specific field names to database-specific field names.
- * This resolver supports both dynamic resolution via a model class and static resolution via provided field mappings.
- * @template T - The type of the model the resolver handles.
+ * MongoDB field resolver for handling field mappings between domain entities and database documents.
+ * @template T - The type of the entity.
  */
 export class MongoFieldResolver<T> {
-  private resolver: FieldResolver<T> | any;
+  private fieldMappings: Record<string, PropertyInfo> = {};
 
-  /**
-   * Constructs a MongoFieldResolver instance.
-   * @param {object} options - Configuration options for the resolver which can include either a model class or field mappings.
-   * @param {ModelConstructor<T>?} options.modelClass - A class that can be instantiated to access field mapping metadata.
-   * @param {Object<string, FieldInfo>?} options.modelFieldMappings - A dictionary mapping domain field names to their database counterparts.
-   */
-  constructor(
-    private options: {
-      modelClass?: ModelConstructor<T>;
-      modelFieldMappings?: {
-        [key: string]: FieldInfo;
-      };
-    }
-  ) {
-    if (this.options.modelClass) {
-      this.resolver = new FieldResolver<T>(options.modelClass);
-    } else if (this.options.modelFieldMappings) {
-      this.resolver = {
-        resolveDatabaseField: (domainField: string) =>
-          this.options.modelFieldMappings[domainField],
-      };
+  constructor(fieldMappings?: Record<string, PropertyInfo>) {
+    if (fieldMappings) {
+      this.fieldMappings = fieldMappings;
     }
   }
 
   /**
-   * Resolves a domain-specific field name to a database-specific field name.
-   * @param {string} domainField - The domain-specific field name to resolve.
-   * @returns {FieldInfo | undefined} - The database-specific field information or undefined if not found.
+   * Gets the field mappings.
+   * @returns {Record<string, PropertyInfo>} The field mappings.
    */
-  resolveDatabaseField(domainField: string): FieldInfo | undefined {
-    return this.resolver.resolveDatabaseField(domainField);
+  getFieldMappings(): Record<string, PropertyInfo> {
+    return this.fieldMappings;
   }
 
   /**
-   * Resolves an object's properties from domain-specific field names to database-specific field names.
-   * This method handles `Condition`, `VariedCondition`, and plain objects.
-   * @param {object} obj - The object to resolve.
-   * @returns {object} - The resolved object with database-specific field names.
+   * Adds a field mapping.
+   * @param {string} entityField - The entity field name.
+   * @param {PropertyInfo} propertyInfo - The property information.
    */
-  resolve(obj: any) {
-    if (!obj) return obj;
+  addFieldMapping(entityField: string, propertyInfo: PropertyInfo): void {
+    this.fieldMappings[entityField] = propertyInfo;
+  }
 
-    let _obj = Array.isArray(obj) ? [] : {};
+  /**
+   * Gets the database field name for a given entity field.
+   * @param {string} entityField - The entity field name.
+   * @returns {string} The database field name.
+   */
+  getDatabaseFieldName(entityField: string): string {
+    const mapping = this.fieldMappings[entityField];
+    return mapping ? mapping.name : entityField;
+  }
 
-    if (obj instanceof Condition) {
-      const leftResolved = this.resolveDatabaseField(obj.left);
-      const rightResolved =
-        typeof obj.right === "object" ? this.resolve(obj.right) : obj.right;
-      _obj = new Condition(
-        leftResolved ? leftResolved.name : obj.left,
-        obj.operator,
-        rightResolved
-      );
-    } else if (obj instanceof VariedCondition) {
-      _obj = new VariedCondition(
-        obj.conditions.map((condition) => this.resolve(condition)),
-        obj.operator
-      );
-    } else {
-      Object.keys(obj).forEach((key) => {
-        const field = this.resolveDatabaseField(key);
-        _obj[field ? field.name : key] = obj[key];
-      });
+  /**
+   * Gets the entity field name for a given database field.
+   * @param {string} dbFieldName - The database field name.
+   * @returns {string | undefined} The entity field name.
+   */
+  getEntityFieldName(dbFieldName: string): string | undefined {
+    for (const [entityField, mapping] of Object.entries(this.fieldMappings)) {
+      if (mapping.name === dbFieldName) {
+        return entityField;
+      }
     }
+    return undefined;
+  }
 
-    return _obj;
+  /**
+   * Transforms an entity object to a database document.
+   * @param {T} entity - The entity to transform.
+   * @returns {Record<string, unknown>} The transformed document.
+   */
+  transformToDocument(entity: T): Record<string, unknown> {
+    const document: Record<string, unknown> = {};
+    
+    for (const [entityField, value] of Object.entries(entity as Record<string, unknown>)) {
+      const dbFieldName = this.getDatabaseFieldName(entityField);
+      const mapping = this.fieldMappings[entityField];
+      
+      if (mapping?.transformer?.to) {
+        document[dbFieldName] = mapping.transformer.to(value);
+      } else {
+        document[dbFieldName] = value;
+      }
+    }
+    
+    return document;
+  }
+
+  /**
+   * Transforms a database document to an entity object.
+   * @param {Record<string, unknown>} document - The document to transform.
+   * @returns {T} The transformed entity.
+   */
+  transformToEntity(document: Record<string, unknown>): T {
+    const entity: Record<string, unknown> = {};
+    
+    // First, transform mapped fields
+    for (const [entityField, mapping] of Object.entries(this.fieldMappings)) {
+      const dbFieldName = mapping.name;
+      const value = document[dbFieldName];
+      
+      if (mapping.transformer?.from) {
+        entity[entityField] = mapping.transformer.from(value);
+      } else {
+        entity[entityField] = value;
+      }
+    }
+    
+    // Then, add any fields that don't have explicit mappings
+    for (const [dbFieldName, value] of Object.entries(document)) {
+      const entityField = this.getEntityFieldName(dbFieldName);
+      if (!entityField) {
+        // If no mapping exists, use the database field name as is
+        entity[dbFieldName] = value;
+      }
+    }
+    
+    return entity as T;
+  }
+
+  /**
+   * Resolves a field by its domain name.
+   * @param {string} domainFieldName - The domain field name.
+   * @returns {PropertyInfo | undefined} The property information.
+   */
+  resolveByDomainField(domainFieldName: string): PropertyInfo | undefined {
+    return this.fieldMappings[domainFieldName];
+  }
+
+  /**
+   * Resolves a field by its database name.
+   * @param {string} databaseFieldName - The database field name.
+   * @returns {PropertyInfo | undefined} The property information.
+   */
+  resolveByDatabaseField(databaseFieldName: string): PropertyInfo | undefined {
+    for (const [entityField, mapping] of Object.entries(this.fieldMappings)) {
+      if (mapping.name === databaseFieldName) {
+        return mapping;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Gets all property mappings.
+   * @returns {Record<string, PropertyInfo>} All property mappings.
+   */
+  getAllPropertyMappings(): Record<string, PropertyInfo> {
+    return { ...this.fieldMappings };
+  }
+
+  /**
+   * Checks if a field has a mapping.
+   * @param {string} fieldName - The field name.
+   * @returns {boolean} True if the field has a mapping.
+   */
+  hasFieldMapping(fieldName: string): boolean {
+    return fieldName in this.fieldMappings;
+  }
+
+  /**
+   * Removes a field mapping.
+   * @param {string} entityField - The entity field name.
+   */
+  removeFieldMapping(entityField: string): void {
+    delete this.fieldMappings[entityField];
+  }
+
+  /**
+   * Clears all field mappings.
+   */
+  clearFieldMappings(): void {
+    this.fieldMappings = {};
   }
 }

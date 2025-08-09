@@ -177,18 +177,18 @@ export class MongoUtils {
         : prefix.toUpperCase() + "_"
       : "";
 
-    return {
-      database: configVars.getStringEnv(`${p}MONGO_DB_NAME`),
-      hosts: configVars.getArrayEnv(`${p}MONGO_HOSTS`),
-      ports: configVars.getArrayEnv(`${p}MONGO_PORTS`),
-      user: configVars.getStringEnv(`${p}MONGO_USER`),
-      password: configVars.getStringEnv(`${p}MONGO_PASSWORD`),
-      authMechanism: configVars.getStringEnv(`${p}MONGO_AUTH_MECHANISM`),
-      authSource: configVars.getStringEnv(`${p}MONGO_AUTH_SOURCE`),
-      replicaSet: configVars.getStringEnv(`${p}MONGO_REPLICA_SET`),
-      ssl: configVars.getBooleanEnv(`${p}MONGO_SSL`),
-      srv: configVars.getBooleanEnv(`${p}MONGO_SRV`),
-    };
+    return new MongoConfig(
+      configVars.getStringEnv(`${p}MONGO_DB_NAME`),
+      configVars.getArrayEnv(`${p}MONGO_HOSTS`),
+      configVars.getArrayEnv(`${p}MONGO_PORTS`),
+      configVars.getStringEnv(`${p}MONGO_USER`),
+      configVars.getStringEnv(`${p}MONGO_PASSWORD`),
+      configVars.getStringEnv(`${p}MONGO_AUTH_MECHANISM`),
+      configVars.getStringEnv(`${p}MONGO_AUTH_SOURCE`),
+      configVars.getBooleanEnv(`${p}MONGO_SSL`),
+      configVars.getStringEnv(`${p}MONGO_REPLICA_SET`),
+      configVars.getBooleanEnv(`${p}MONGO_SRV`)
+    );
   };
 
   static getMongoModuleVersion() {

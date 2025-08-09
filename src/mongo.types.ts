@@ -1,8 +1,10 @@
 import * as Soap from "@soapjs/soap";
 import * as mongoDb from "mongodb";
+import { MongoPerformanceConfig } from "./mongo.performance";
 
 export type CollectionOptions<T> = Soap.SourceOptions<T> & {
   indexes?: mongoDb.IndexDescription[];
+  performanceMonitoring?: Partial<MongoPerformanceConfig>;
 };
 
 export type MongoAggregateParams = {

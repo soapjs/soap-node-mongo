@@ -1,4 +1,4 @@
-import { MongoError } from 'mongodb';
+import { MongoError } from "mongodb";
 
 export class PendingSessionError extends Error {
   constructor() {
@@ -6,10 +6,18 @@ export class PendingSessionError extends Error {
   }
 }
 
+export class PendingTransactionError extends Error {
+  constructor() {
+    super(
+      `The current session has pending transaction. Cannot start a new one.`
+    );
+  }
+}
+
 export enum SessionErrorType {
-  UnknownTransactionCommitResult = 'UnknownTransactionCommitResult',
-  TransientTransactionError = 'TransientTransactionError',
-  Other = 'Other',
+  UnknownTransactionCommitResult = "UnknownTransactionCommitResult",
+  TransientTransactionError = "TransientTransactionError",
+  Other = "Other",
 }
 
 export class SessionError extends Error {
@@ -19,12 +27,12 @@ export class SessionError extends Error {
 
     if (
       error instanceof MongoError &&
-      error.hasErrorLabel('UnknownTransactionCommitResult')
+      error.hasErrorLabel("UnknownTransactionCommitResult")
     ) {
       this._type = SessionErrorType.UnknownTransactionCommitResult;
     } else if (
       error instanceof MongoError &&
-      error.hasErrorLabel('TransientTransactionError')
+      error.hasErrorLabel("TransientTransactionError")
     ) {
       this._type = SessionErrorType.TransientTransactionError;
     } else {

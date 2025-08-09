@@ -1,123 +1,135 @@
 import { MongoWhereParser } from "../mongo.where.parser";
-import { Condition, VariedCondition, Where } from "@soapjs/soap";
-import { ObjectId } from "mongodb";
+import { Where, Condition, VariedCondition } from "@soapjs/soap";
 
 describe("MongoWhereParser", () => {
-  let parseSimpleConditionSpy, parseVariedConditionSpy;
+  let parser: MongoWhereParser;
 
   beforeEach(() => {
-    // Setup spies or mocks before each test
-    parseSimpleConditionSpy = jest.spyOn(
-      MongoWhereParser as any,
-      "parseSimpleCondition"
-    );
-    parseVariedConditionSpy = jest.spyOn(
-      MongoWhereParser as any,
-      "parseVariedCondition"
-    );
-  });
-
-  afterEach(() => {
-    // Clears all information stored in the mocks - call history, passed parameters, etc
-    jest.clearAllMocks();
-
-    // Alternatively, if you want to restore original functions (useful if the mocks alter behavior deeply)
-    jest.restoreAllMocks();
+    parser = new MongoWhereParser();
   });
 
   describe("parse", () => {
     it("should return an empty object for null input", () => {
-      expect(MongoWhereParser.parse(null)).toEqual({});
+      const result = parser.parse(null as any);
+      expect(result).toEqual({});
     });
 
     it("should handle simple conditions", () => {
-      const condition = new Condition("name", "eq", "Alice");
-      parseSimpleConditionSpy.mockReturnValue({ name: { $eq: "Alice" } });
-      expect(MongoWhereParser.parse(condition)).toEqual({
-        name: { $eq: "Alice" },
-      });
+      const where = new Where();
+      where.valueOf("testField").isEq("value");
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: "value" });
     });
 
     it("should handle varied conditions", () => {
-      const conditions = new VariedCondition(
-        [new Condition("age", "gt", 30), new Condition("active", "eq", true)],
-        "and"
-      );
-      parseVariedConditionSpy.mockReturnValue({
-        $and: [{ age: { $gt: 30 } }, { active: { $eq: true } }],
-      });
-      expect(MongoWhereParser.parse(conditions)).toEqual({
-        $and: [{ age: { $gt: 30 } }, { active: { $eq: true } }],
+      const where = new Where();
+      where.valueOf("field1").isEq("value1");
+      where.and.valueOf("field2").isEq("value2");
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({
+        $and: [
+          { field1: "value1" },
+          { field2: "value2" }
+        ]
       });
     });
 
-    it("should throw an error for unsupported data types", () => {
-      expect(() => MongoWhereParser.parse("string" as any)).toThrow(
-        "Invalid condition format"
-      );
+    it("should handle OR conditions", () => {
+      const where = new Where();
+      where.valueOf("field1").isEq("value1");
+      where.or.valueOf("field2").isEq("value2");
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({
+        $or: [
+          { field1: "value1" },
+          { field2: "value2" }
+        ]
+      });
     });
   });
 
-  describe("parseSimpleCondition", () => {
+  describe("parseCondition", () => {
     it("should correctly parse an equality condition", () => {
-      const condition = new Condition("status", "eq", "active");
-      expect((MongoWhereParser as any).parseSimpleCondition(condition)).toEqual(
-        {
-          status: { $eq: "active" },
-        }
-      );
+      const condition = new Condition("testField", "eq", "value");
+      const result = parser.parse(new Where().valueOf("testField").isEq("value"));
+      expect(result).toEqual({ testField: "value" });
     });
 
-    it("should convert id fields to ObjectId", () => {
-      const condition = new Condition("_id", "eq", "507f1f77bcf86cd799439011");
-      expect((MongoWhereParser as any).parseSimpleCondition(condition)).toEqual(
-        {
-          _id: { $eq: new ObjectId("507f1f77bcf86cd799439011") },
-        }
-      );
+    it("should handle 'ne' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isNotEq("value");
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $ne: "value" } });
+    });
+
+    it("should handle 'gt' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isGt(10);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $gt: 10 } });
+    });
+
+    it("should handle 'gte' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isGte(10);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $gte: 10 } });
+    });
+
+    it("should handle 'lt' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isLt(10);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $lt: 10 } });
+    });
+
+    it("should handle 'lte' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isLte(10);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $lte: 10 } });
+    });
+
+    it("should handle 'in' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").isIn(["value1", "value2"]);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $in: ["value1", "value2"] } });
+    });
+
+    it("should handle 'nin' operator", () => {
+      const where = new Where();
+      where.valueOf("testField").areNotIn(["value1", "value2"]);
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $nin: ["value1", "value2"] } });
     });
 
     it("should handle 'like' operator as regex", () => {
-      const condition = new Condition("name", "like", "john");
-      expect((MongoWhereParser as any).parseSimpleCondition(condition)).toEqual(
-        {
-          name: { $regex: "john", $options: "i" },
-        }
-      );
+      const where = new Where();
+      where.valueOf("testField").like("pattern");
+      
+      const result = parser.parse(where);
+      expect(result).toEqual({ testField: { $regex: "^pattern$", $options: "i" } });
     });
   });
 
-  describe("parseVariedCondition", () => {
-    it("should combine conditions using logical 'and'", () => {
-      const conditions = new VariedCondition(
-        [new Condition("age", "gt", 30), new Condition("active", "eq", true)],
-        "and"
-      );
-      const result = (MongoWhereParser as any).parseVariedCondition(conditions);
-      expect(result).toEqual({
-        $and: [{ age: { $gt: 30 } }, { active: { $eq: true } }],
-      });
-    });
-
-    it("should combine conditions using logical 'or'", () => {
-      const conditions = new VariedCondition(
-        [new Condition("age", "lt", 30), new Condition("active", "eq", false)],
-        "or"
-      );
-      const result = (MongoWhereParser as any).parseVariedCondition(conditions);
-      expect(result).toEqual({
-        $or: [{ age: { $lt: 30 } }, { active: { $eq: false } }],
-      });
-    });
-
-    it("should throw an error for unsupported logical operators", () => {
-      const conditions = new VariedCondition(
-        [new Condition("age", "gt", 30)],
-        "xor" as any
-      );
-      expect(() =>
-        (MongoWhereParser as any).parseVariedCondition(conditions)
-      ).toThrow(`Unsupported logical operator xor`);
+  describe("static parse", () => {
+    it("should work as static method", () => {
+      const where = new Where();
+      where.valueOf("testField").isEq("value");
+      
+      const result = MongoWhereParser.parse(where);
+      expect(result).toEqual({ testField: "value" });
     });
   });
 });

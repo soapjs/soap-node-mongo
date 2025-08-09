@@ -1,41 +1,116 @@
-import { Condition, VariedCondition } from "@soapjs/soap";
 import { MongoFieldResolver } from "../mongo.field-resolver";
+import { PropertyInfo } from "@soapjs/soap";
 
 describe("MongoFieldResolver", () => {
-  let resolver;
+  let resolver: MongoFieldResolver<any>;
 
   beforeEach(() => {
-    const fieldMappings = {
-      name: { name: "customerName", type: "string" },
+    const fieldMappings: Record<string, PropertyInfo> = {
+      name: { name: "name", type: "string" },
+      age: { name: "age", type: "number" },
+      email: { name: "email", type: "string" },
     };
-    resolver = new MongoFieldResolver({ modelFieldMappings: fieldMappings });
+    resolver = new MongoFieldResolver(fieldMappings);
   });
 
-  test("should resolve a simple object", () => {
-    const obj = { name: "John" };
-    const resolved = resolver.resolve(obj);
-    expect(resolved).toEqual({ customerName: "John" });
+  describe("getDatabaseFieldName", () => {
+    it("should return the mapped database field name", () => {
+      expect(resolver.getDatabaseFieldName("name")).toBe("name");
+      expect(resolver.getDatabaseFieldName("age")).toBe("age");
+      expect(resolver.getDatabaseFieldName("email")).toBe("email");
+    });
+
+    it("should return the original field name if no mapping exists", () => {
+      expect(resolver.getDatabaseFieldName("unknownField")).toBe("unknownField");
+    });
   });
 
-  test("should handle Condition objects", () => {
-    const condition = new Condition("name", "eq", "John");
-    const resolved = resolver.resolve(condition);
-    expect(resolved.left).toEqual("customerName");
-    expect(resolved.operator).toEqual("eq");
-    expect(resolved.right).toEqual("John");
+  describe("transformToDocument", () => {
+    it("should transform entity to document with field mappings", () => {
+      const entity = {
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+      };
+
+      const document = resolver.transformToDocument(entity);
+
+      expect(document).toEqual({
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+      });
+    });
+
+    it("should handle missing fields gracefully", () => {
+      const entity = {
+        name: "John Doe",
+        // age is missing
+        email: "john@example.com",
+      };
+
+      const document = resolver.transformToDocument(entity);
+
+      expect(document).toEqual({
+        name: "John Doe",
+        email: "john@example.com",
+      });
+    });
   });
 
-  test("should handle VariedCondition objects", () => {
-    const condition1 = new Condition("name", "eq", "John");
-    const condition2 = new Condition("name", "eq", "Doe");
-    const variedCondition = new VariedCondition(
-      [condition1, condition2],
-      "and"
-    );
-    const resolved = resolver.resolve(variedCondition);
-    expect(resolved.conditions.length).toBe(2);
-    expect(resolved.conditions[0].left).toEqual("customerName");
-    expect(resolved.conditions[1].left).toEqual("customerName");
-    expect(resolved.operator).toEqual("and");
+  describe("transformToEntity", () => {
+    it("should transform document to entity with field mappings", () => {
+      const document = {
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+      };
+
+      const entity = resolver.transformToEntity(document);
+
+      expect(entity).toEqual({
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+      });
+    });
+
+    it("should handle extra fields in document", () => {
+      const document = {
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+        extraField: "extra value",
+      };
+
+      const entity = resolver.transformToEntity(document);
+
+      expect(entity).toEqual({
+        name: "John Doe",
+        age: 30,
+        email: "john@example.com",
+        extraField: "extra value",
+      });
+    });
+  });
+
+  describe("addFieldMapping", () => {
+    it("should add a new field mapping", () => {
+      resolver.addFieldMapping("newField", { name: "new_field", type: "string" });
+
+      expect(resolver.getDatabaseFieldName("newField")).toBe("new_field");
+    });
+  });
+
+  describe("getFieldMappings", () => {
+    it("should return all field mappings", () => {
+      const mappings = resolver.getFieldMappings();
+
+      expect(mappings).toEqual({
+        name: { name: "name", type: "string" },
+        age: { name: "age", type: "number" },
+        email: { name: "email", type: "string" },
+      });
+    });
   });
 });
