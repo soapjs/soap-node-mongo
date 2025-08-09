@@ -11,17 +11,26 @@ export class MongoWhereParser {
    * @param {Where} where - The where condition to parse.
    * @returns {mongoDb.Filter<mongoDb.Document>} The MongoDB filter.
    */
-  parse(where: Where): mongoDb.Filter<mongoDb.Document> {
+  parse(where: Where | any): mongoDb.Filter<mongoDb.Document> {
     if (!where) {
       return {};
     }
 
-    const condition = where.build();
-    if (!condition) {
-      return {};
+    // If where is already a plain object, return it directly
+    if (typeof where === 'object' && !where.build) {
+      return where as mongoDb.Filter<mongoDb.Document>;
     }
 
-    return this.parseCondition(condition);
+    // If where is a Where instance, use the build method
+    if (where && typeof where.build === 'function') {
+      const condition = where.build();
+      if (!condition) {
+        return {};
+      }
+      return this.parseCondition(condition);
+    }
+
+    return {};
   }
 
   /**

@@ -10,14 +10,15 @@
   "author": "Radoslaw Kamysz",
   "scripts": {
     "test:unit": "jest --config=jest.config.unit.json",
-    "test:integration": "NODE_OPTIONS='--experimental-fetch' jest --config=jest.config.integration.json",
+    "test:integration": "jest --config=jest.config.integration.json",
     "test": "npm run test:unit && npm run test:integration",
+    "test:mongo-setup": "ts-node scripts/test-mongo-setup.ts",
     "clean": "rm -rf ./build",
     "build": "npm run clean && tsc -b",
     "prepublish": "npm run clean && tsc --project tsconfig.build.json"
   },
   "devDependencies": {
-    "@testcontainers/mongodb": "^11.5.1",
+    "@testcontainers/mongodb": "^10.24.2",
     "@types/jest": "^27.0.3",
     "@types/node": "^18.7.14",
     "@web-std/file": "^3.0.3",
@@ -25,6 +26,7 @@
     "mongodb": "^6.3.0",
     "testcontainers": "^11.5.1",
     "ts-jest": "^27.1.3",
+    "ts-node": "^10.9.2",
     "typescript": "^4.8.2"
   },
   "peerDependencies": {

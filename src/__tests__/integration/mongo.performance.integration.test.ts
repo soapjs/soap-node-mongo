@@ -1,6 +1,12 @@
 import { MongoSource } from '../../mongo.source';
 import { SoapMongo } from '../../soap.mongo';
-import { testClient, testDb } from './setup';
+import { 
+  testClient, 
+  testDb,
+  setupTestDatabase,
+  cleanupTestDatabase,
+  cleanupCollections
+} from './setup';
 
 describe('MongoPerformance Integration Tests', () => {
   let soapMongo: SoapMongo;
@@ -8,10 +14,20 @@ describe('MongoPerformance Integration Tests', () => {
   let sourceWithoutMonitoring: MongoSource<any>;
 
   beforeAll(async () => {
+    // Setup test database
+    await setupTestDatabase();
     soapMongo = new SoapMongo(testClient, testDb);
   });
 
+  afterAll(async () => {
+    // Cleanup test database
+    await cleanupTestDatabase();
+  });
+
   beforeEach(async () => {
+    // Clean up collections before each test
+    await cleanupCollections();
+    
     // Create sources with and without performance monitoring
     sourceWithMonitoring = new MongoSource(soapMongo, 'performance_test', {
       performanceMonitoring: {

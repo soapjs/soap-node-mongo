@@ -1,6 +1,12 @@
 import { MongoMigrationManager, BaseMigration, MongoMigration } from '../../mongo.migration';
 import { SoapMongo } from '../../soap.mongo';
-import { testClient, testDb } from './setup';
+import { 
+  testClient, 
+  testDb,
+  setupTestDatabase,
+  cleanupTestDatabase,
+  cleanupCollections
+} from './setup';
 import * as mongoDb from 'mongodb';
 
 describe('MongoMigration Integration Tests', () => {
@@ -8,17 +14,24 @@ describe('MongoMigration Integration Tests', () => {
   let migrationManager: MongoMigrationManager;
 
   beforeAll(async () => {
+    // Setup test database
+    await setupTestDatabase();
     soapMongo = new SoapMongo(testClient, testDb);
   });
 
+  afterAll(async () => {
+    // Cleanup test database
+    await cleanupTestDatabase();
+  });
+
   beforeEach(async () => {
+    // Clean up collections before each test
+    await cleanupCollections();
+    
     // Create fresh migration manager for each test
     migrationManager = new MongoMigrationManager(soapMongo, {
       collectionName: 'migrations'
     });
-
-    // Clean up migrations collection
-    await testDb.collection('migrations').deleteMany({});
   });
 
   describe('Migration Registration', () => {
@@ -86,12 +99,11 @@ describe('MongoMigration Integration Tests', () => {
       const failingMigration = new FailingMigration();
       migrationManager.register(failingMigration);
 
-      try {
-        await migrationManager.migrate();
-        fail('Should have thrown error');
-      } catch (error: any) {
-        expect(error.message).toContain('Migration failed');
-      }
+      const result = await migrationManager.migrate();
+      
+      expect(result.success).toBe(false);
+      expect(result.failedCount).toBe(1);
+      expect(result.failed[0].error).toContain('Migration failed');
 
       // Verify migration was not applied
       const status = await migrationManager.getMigrationStatus();
@@ -141,12 +153,10 @@ describe('MongoMigration Integration Tests', () => {
       await migrationManager.migrate();
 
       // Try to rollback
-      try {
-        await migrationManager.rollback();
-        fail('Should have thrown error');
-      } catch (error: any) {
-        expect(error.message).toContain('not reversible');
-      }
+      const result = await migrationManager.rollback();
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not reversible');
     });
   });
 
@@ -187,21 +197,15 @@ describe('MongoMigration Integration Tests', () => {
   });
 
   describe('Migration Validation', () => {
-    it('should validate migration versions', async () => {
-      const migration1 = new TestMigration1(); // version 1
-      const migration2 = new TestMigration2(); // version 2
-      const migration3 = new TestMigration3(); // version 1 (duplicate)
+    it('should validate migration versions', () => {
+      const migration1 = new TestMigration1();
+      const migration3 = new TestMigration3(); // Same version as migration1
 
       migrationManager.register(migration1);
-      migrationManager.register(migration2);
-      migrationManager.register(migration3);
 
-      try {
-        await migrationManager.migrate();
-        fail('Should have thrown validation error');
-      } catch (error: any) {
-        expect(error.message).toContain('duplicate version');
-      }
+      expect(() => {
+        migrationManager.register(migration3);
+      }).toThrow('Migration with version 1 already exists. Duplicate version detected.');
     });
   });
 });

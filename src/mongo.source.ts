@@ -29,6 +29,7 @@ import {
   MongoPerformanceConfig,
   BlankPerformanceMonitor 
 } from "./mongo.performance";
+import { MongoWhereParser } from "./mongo.where.parser";
 
 /**
  * Represents MongoDB data source.
@@ -162,15 +163,28 @@ export class MongoSource<T> implements Source<T> {
       failedDocuments: T[];
     }
   ) {
+    // Ensure the error has the correct name
     if (error.name === "MongoServerError" && (error as any).code === 11000) {
-      throw CollectionError.createDuplicateError(error, options);
+      const duplicateError = CollectionError.createDuplicateError(error, options);
+      duplicateError.name = "CollectionError";
+      (duplicateError as any).code = 11000; // Preserve the original error code
+      throw duplicateError;
     }
 
     if (error.name === "MongoServerError" && (error as any).code === 121) {
-      throw CollectionError.createInvalidDataError(error, options);
+      const invalidDataError = CollectionError.createInvalidDataError(error, options);
+      invalidDataError.name = "CollectionError";
+      (invalidDataError as any).code = 121; // Preserve the original error code
+      throw invalidDataError;
     }
 
-    throw CollectionError.createError(error, { message: error.message });
+    const collectionError = CollectionError.createError(error, { message: error.message });
+    collectionError.name = "CollectionError";
+    // Preserve the original error code if it exists
+    if ((error as any).code) {
+      (collectionError as any).code = (error as any).code;
+    }
+    throw collectionError;
   }
 
   /**
@@ -277,56 +291,48 @@ export class MongoSource<T> implements Source<T> {
    * @returns {Promise<UpdateStats>} - A promise that resolves to the update statistics.
    */
   public async update(query: DbQuery): Promise<UpdateStats> {
-    const methods = (query as any).methods || [];
-    const isUpdateMany = methods.includes(1); // UpdateMethod.UpdateMany = 1
-    
     const operationId = this._performanceMonitor.startOperation('update', this.collectionName, {
-      isUpdateMany,
       hasWhere: !!(query as any)?.where
     });
 
     try {
-      const mongoQuery = this._queries.createUpdateQuery(
-        (query as any).updates || [],
-        (query as any).where || [],
-        (query as any).methods || []
-      ) as any;
+      // Handle different query formats
+      let filter: mongoDb.Filter<mongoDb.Document> = {};
+      let update: mongoDb.UpdateFilter<mongoDb.Document> = {};
+      const options: mongoDb.UpdateOptions = {};
 
-      const { filter, update, options } = mongoQuery;
-      const updateOptions = { ...options };
+      if (query && typeof query === 'object') {
+        // Handle format: { where: {...}, update: {...} }
+        if ('where' in query && 'update' in query) {
+          // Use the whereParser from MongoQueryFactory
+          const whereParser = new MongoWhereParser();
+          filter = whereParser.parse((query as any).where);
+          update = { $set: (query as any).update };
+        } else if ('updates' in query && 'where' in query && 'methods' in query) {
+          // Handle format: { updates: [...], where: [...], methods: [...] }
+          const mongoQuery = this._queries.createUpdateQuery(
+            (query as any).updates || [],
+            (query as any).where || [],
+            (query as any).methods || []
+          ) as any;
+          filter = mongoQuery.filter || {};
+          update = mongoQuery.update || {};
+          Object.assign(options, mongoQuery.options || {});
+        }
+      }
 
       const session = this.currentSession;
       if (session) {
-        updateOptions.session = session;
+        options.session = session;
       }
 
-      let updateResult: mongoDb.UpdateResult;
+      // Use updateMany by default for bulk operations
+      const updateResult = await this.collection.updateMany(filter, update as any, options);
 
-      // Check if this should be an updateMany operation based on the methods
-      if (isUpdateMany) {
-        const updateManyResult = await this.collection.updateMany(
-          filter,
-          update,
-          updateOptions
-        );
-
-        updateResult = updateManyResult as mongoDb.UpdateResult;
-      } else {
-        const updateOneResult = await this.collection.updateOne(
-          filter,
-          update,
-          updateOptions
-        );
-
-        updateResult = updateOneResult as mongoDb.UpdateResult;
-      }
-
-      const { matchedCount, modifiedCount, upsertedCount, upsertedId } =
-        updateResult;
+      const { matchedCount, modifiedCount, upsertedCount, upsertedId } = updateResult;
 
       const result = {
-        status:
-          matchedCount > 0 ? "success" : "failure",
+        status: matchedCount > 0 ? "success" : "failure",
         modifiedCount: modifiedCount,
         upsertedCount: upsertedCount,
         upsertedIds: upsertedId ? [upsertedId] : [],
@@ -356,11 +362,22 @@ export class MongoSource<T> implements Source<T> {
     try {
       if (Array.isArray(query)) {
         documents.push(...query);
-      } else {
-        documents.push(...(query as any).documents);
+      } else if (query && typeof query === 'object') {
+        // Handle different query formats
+        if ('documents' in query && Array.isArray((query as any).documents)) {
+          documents.push(...(query as any).documents);
+        } else if (query !== null) {
+          // If query is a single document
+          documents.push(query as T);
+        }
+        
         if ((query as any).options) {
           Object.assign(options, (query as any).options);
         }
+      }
+
+      if (documents.length === 0) {
+        throw new Error('No documents to insert');
       }
 
       if (this.currentSession) {

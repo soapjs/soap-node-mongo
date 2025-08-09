@@ -2,7 +2,16 @@ import { MongoSource } from '../../mongo.source';
 import { SoapMongo } from '../../soap.mongo';
 import { MongoConfig } from '../../mongo.config';
 import { ObjectId } from 'mongodb';
-import { testClient, testDb, createTestData, getTestData, countTestData } from './setup';
+import { 
+  testClient, 
+  testDb, 
+  createTestData, 
+  getTestData, 
+  countTestData,
+  setupTestDatabase,
+  cleanupTestDatabase,
+  cleanupCollections
+} from './setup';
 
 describe('MongoSource Integration Tests', () => {
   let soapMongo: SoapMongo;
@@ -10,24 +19,22 @@ describe('MongoSource Integration Tests', () => {
   let productSource: MongoSource<any>;
 
   beforeAll(async () => {
-    // Create SoapMongo instance for testing
-    const config = new MongoConfig(
-      'soapjs_test',
-      ['localhost'],
-      [27017],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      false,
-      undefined,
-      false
-    );
+    // Setup test database
+    await setupTestDatabase();
     
+    // Create SoapMongo instance for testing
     soapMongo = new SoapMongo(testClient, testDb);
   });
 
+  afterAll(async () => {
+    // Cleanup test database
+    await cleanupTestDatabase();
+  });
+
   beforeEach(async () => {
+    // Clean up collections before each test
+    await cleanupCollections();
+    
     // Create fresh sources for each test
     userSource = new MongoSource(soapMongo, 'users');
     productSource = new MongoSource(soapMongo, 'products');

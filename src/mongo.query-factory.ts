@@ -177,19 +177,34 @@ export class MongoQueryFactory<T> implements DbQueryFactory {
 
       // Add aggregation functions
       if (params.sum) {
-        groupStage.$group[params.sum] = { $sum: `$${params.sum}` };
+        const sumFields = Array.isArray(params.sum) ? params.sum : [params.sum];
+        sumFields.forEach(field => {
+          groupStage.$group[`sum_${field}`] = { $sum: `$${field}` };
+        });
       }
       if (params.average) {
-        groupStage.$group[params.average] = { $avg: `$${params.average}` };
+        const averageFields = Array.isArray(params.average) ? params.average : [params.average];
+        averageFields.forEach(field => {
+          groupStage.$group[`average_${field}`] = { $avg: `$${field}` };
+        });
       }
       if (params.min) {
-        groupStage.$group[params.min] = { $min: `$${params.min}` };
+        const minFields = Array.isArray(params.min) ? params.min : [params.min];
+        minFields.forEach(field => {
+          groupStage.$group[`min_${field}`] = { $min: `$${field}` };
+        });
       }
       if (params.max) {
-        groupStage.$group[params.max] = { $max: `$${params.max}` };
+        const maxFields = Array.isArray(params.max) ? params.max : [params.max];
+        maxFields.forEach(field => {
+          groupStage.$group[`max_${field}`] = { $max: `$${field}` };
+        });
       }
       if (params.count) {
-        groupStage.$group[params.count] = { $sum: 1 };
+        const countFields = Array.isArray(params.count) ? params.count : [params.count];
+        countFields.forEach(field => {
+          groupStage.$group[`count_${field}`] = { $sum: 1 };
+        });
       }
 
       pipeline.push(groupStage);

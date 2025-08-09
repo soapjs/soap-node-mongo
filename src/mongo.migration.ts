@@ -91,6 +91,18 @@ export class MongoMigrationManager {
    * Register a migration.
    */
   register(migration: MongoMigration): void {
+    // Check for duplicate versions
+    const existingVersion = this.migrations.find(m => m.version === migration.version);
+    if (existingVersion) {
+      throw new Error(`Migration with version ${migration.version} already exists. Duplicate version detected.`);
+    }
+
+    // Check for duplicate IDs
+    const existingId = this.migrations.find(m => m.id === migration.id);
+    if (existingId) {
+      throw new Error(`Migration with ID '${migration.id}' already exists.`);
+    }
+
     this.migrations.push(migration);
   }
 
