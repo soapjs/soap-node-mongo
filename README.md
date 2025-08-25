@@ -437,6 +437,72 @@ if (removeResult.isSuccess()) {
 }
 ```
 
+#### JSON Field Extraction (`jsonExtract`)
+
+Extract and query nested JSON fields:
+
+```typescript
+// Find documents where metadata.user.name equals 'John'
+const where = new Where()
+  .valueOf('metadata')
+  .jsonExtract('user.name', 'John');
+
+// MongoDB equivalent: 
+// { $expr: { $eq: [{ $getField: { field: 'user.name', input: '$metadata' } }, 'John'] } }
+```
+
+#### Full-Text Search (`fullTextSearch`)
+
+Perform full-text search across indexed text fields:
+
+```typescript
+// Find documents containing 'search term' in any text-indexed field
+const where = new Where()
+  .valueOf('content')
+  .fullTextSearch('search term');
+
+// MongoDB equivalent:
+// { $text: { $search: 'search term' } }
+```
+
+**Note**: Full-text search requires a text index to be created on the collection.
+
+#### Array Containment (`arrayContains`)
+
+Check if an array field contains specific values:
+
+```typescript
+// Find documents where tags array contains both 'urgent' and 'critical'
+const where = new Where()
+  .valueOf('tags')
+  .arrayContains(['urgent', 'critical']);
+
+// MongoDB equivalent:
+// { tags: { $all: ['urgent', 'critical'] } }
+
+// Single value example
+const where2 = new Where()
+  .valueOf('categories')
+  .arrayContains('category1');
+
+// MongoDB equivalent:
+// { categories: { $all: ['category1'] } }
+```
+
+#### Text Search (`textSearch`)
+
+Perform case-insensitive text search using regex:
+
+```typescript
+// Find documents where description contains 'search text' (case-insensitive)
+const where = new Where()
+  .valueOf('description')
+  .textSearch('search text');
+
+// MongoDB equivalent:
+// { description: { $regex: 'search text', $options: 'i' } }
+```
+
 #### Advanced Queries
 
 ```typescript
@@ -467,6 +533,29 @@ const aggregationResult = await userRepo.aggregate({
 });
 ```
 
+You can combine these new methods with existing logical operators:
+
+```typescript
+// Complex query with multiple conditions
+const where = new Where()
+  .valueOf('title')
+  .textSearch('important')
+  .and
+  .valueOf('tags')
+  .arrayContains(['urgent', 'critical'])
+  .and
+  .valueOf('metadata')
+  .jsonExtract('priority', 'high');
+
+// MongoDB equivalent:
+// {
+//   $and: [
+//     { title: { $regex: 'important', $options: 'i' } },
+//     { tags: { $all: ['urgent', 'critical'] } },
+//     { $expr: { $eq: [{ $getField: { field: 'priority', input: '$metadata' } }, 'high'] } }
+//   ]
+// }
+```
 ### 7. Transaction Support
 
 #### Using SOAPJS Transaction System
@@ -1342,63 +1431,6 @@ const source = new MongoSource(soapMongo, 'users', {
   }
 });
 ```
-
-## Migration Guide
-
-### From Previous Versions
-
-#### Version 0.2.x to 0.3.x
-
-1. **Performance Monitoring**: New optional feature - no breaking changes
-2. **Connection Pool**: Enhanced configuration - backward compatible
-3. **Migrations**: New feature - no impact on existing code
-
-#### Breaking Changes
-
-- None in version 0.3.x
-
-## Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes**:
-   - Follow TypeScript best practices
-   - Add comprehensive tests
-   - Update documentation
-   - Ensure all tests pass
-4. **Commit your changes**: `git commit -m 'Add amazing feature'`
-5. **Push to the branch**: `git push origin feature/amazing-feature`
-6. **Submit a pull request**
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/soapjs/soap-node-mongo.git
-cd soap-node-mongo
-
-# Install dependencies
-npm install
-
-# Run tests
-npm run test:unit
-
-# Build the project
-npm run build
-
-# Check code coverage
-npm run test:unit -- --coverage
-```
-
-### Code Style
-
-- Use TypeScript for all new code
-- Follow ESLint configuration
-- Use Prettier for code formatting
-- Write comprehensive JSDoc comments
-- Follow conventional commit messages
 
 ## License
 

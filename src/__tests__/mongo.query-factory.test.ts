@@ -137,7 +137,7 @@ describe("MongoQueryFactory", () => {
       expect(result.pipeline).toContainEqual({
         $group: {
           _id: { testField: "$testField" },
-          amount: { $sum: "$amount" }
+          sum_amount: { $sum: "$amount" }
         }
       });
       expect(result.pipeline).toContainEqual({
@@ -155,7 +155,7 @@ describe("MongoQueryFactory", () => {
       expect(result.pipeline).toContainEqual({
         $group: {
           _id: { category: "$category" },
-          total: { $sum: 1 }
+          count_total: { $sum: 1 }
         }
       });
     });
@@ -172,11 +172,11 @@ describe("MongoQueryFactory", () => {
 
       const result = factory.createAggregationQuery(params) as any;
       const groupStage = result.pipeline.find((stage: any) => stage.$group);
-      expect(groupStage.$group.amount).toEqual({ $sum: "$amount" });
-      expect(groupStage.$group.price).toEqual({ $avg: "$price" });
-      expect(groupStage.$group.minPrice).toEqual({ $min: "$minPrice" });
-      expect(groupStage.$group.maxPrice).toEqual({ $max: "$maxPrice" });
-      expect(groupStage.$group.total).toEqual({ $sum: 1 });
+      expect(groupStage.$group.sum_amount).toEqual({ $sum: "$amount" });
+      expect(groupStage.$group.average_price).toEqual({ $avg: "$price" });
+      expect(groupStage.$group.min_minPrice).toEqual({ $min: "$minPrice" });
+      expect(groupStage.$group.max_maxPrice).toEqual({ $max: "$maxPrice" });
+      expect(groupStage.$group.count_total).toEqual({ $sum: 1 });
     });
   });
 });

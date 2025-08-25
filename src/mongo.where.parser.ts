@@ -114,6 +114,32 @@ export class MongoWhereParser {
           }
         }
         return { [field]: { $regex: pattern, $options: "i" } };
+      case "json_extract":
+        // Handle JSON field extraction using MongoDB's $jsonSchema or $expr with $getField
+        if (typeof value === 'object' && value.path && value.value !== undefined) {
+          // Use $expr with $getField for JSON path extraction
+          return { 
+            $expr: { 
+              $eq: [
+                { $getField: { field: value.path, input: `$${field}` } },
+                value.value
+              ]
+            }
+          };
+        }
+        return { [field]: value };
+      case "full_text_search":
+        // Handle full-text search using MongoDB's $text operator
+        return { $text: { $search: value } };
+      case "array_contains":
+        // Handle array containment using $all operator
+        return { [field]: { $all: Array.isArray(value) ? value : [value] } };
+      case "text_search":
+        // Handle text search using regex for case-insensitive search
+        if (typeof value === 'string') {
+          return { [field]: { $regex: value, $options: "i" } };
+        }
+        return { [field]: value };
       default:
         return { [field]: value };
     }

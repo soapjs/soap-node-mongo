@@ -8,6 +8,8 @@ import {
   CountParams,
   AggregationParams,
   RemoveParams,
+  UpdateParams,
+  UpdateMethod,
   DatabaseSession,
   DatabaseSessionRegistry,
   DbQuery
@@ -192,7 +194,7 @@ export class MongoSource<T> implements Source<T> {
    * @param {DbQuery} [query] - The query to execute.
    * @returns {Promise<T[]>} - A promise that resolves to an array of found documents.
    */
-  public async find(query?: DbQuery): Promise<T[]> {
+  public async find(query?: DbQuery | FindParams): Promise<T[]> {
     const operationId = this._performanceMonitor.startOperation('find', this.collectionName, {
       hasQuery: !!query,
       hasWhere: !!(query as any)?.where
@@ -224,7 +226,7 @@ export class MongoSource<T> implements Source<T> {
    * @param {DbQuery} [query] - The query to execute.
    * @returns {Promise<number>} - A promise that resolves to the count of documents.
    */
-  public async count(query?: DbQuery): Promise<number> {
+  public async count(query?: DbQuery | CountParams): Promise<number> {
     const operationId = this._performanceMonitor.startOperation('count', this.collectionName, {
       hasQuery: !!query,
       hasWhere: !!(query as any)?.where
@@ -255,7 +257,7 @@ export class MongoSource<T> implements Source<T> {
    * @param {DbQuery} query - The aggregation query to execute.
    * @returns {Promise<AggregationType[]>} - A promise that resolves to the result of the aggregation.
    */
-  public async aggregate<AggregationType = T>(query: DbQuery): Promise<AggregationType[]> {
+  public async aggregate<AggregationType = T>(query: DbQuery | AggregationParams): Promise<AggregationType[]> {
     const operationId = this._performanceMonitor.startOperation('aggregate', this.collectionName, {
       hasQuery: !!query,
       hasWhere: !!(query as any)?.where
@@ -290,7 +292,7 @@ export class MongoSource<T> implements Source<T> {
    * @param {DbQuery} query - The update query to execute.
    * @returns {Promise<UpdateStats>} - A promise that resolves to the update statistics.
    */
-  public async update(query: DbQuery): Promise<UpdateStats> {
+  public async update(query: DbQuery | UpdateParams): Promise<UpdateStats> {
     const operationId = this._performanceMonitor.startOperation('update', this.collectionName, {
       hasWhere: !!(query as any)?.where
     });
@@ -302,22 +304,21 @@ export class MongoSource<T> implements Source<T> {
       const options: mongoDb.UpdateOptions = {};
 
       if (query && typeof query === 'object') {
-        // Handle format: { where: {...}, update: {...} }
-        if ('where' in query && 'update' in query) {
-          // Use the whereParser from MongoQueryFactory
-          const whereParser = new MongoWhereParser();
-          filter = whereParser.parse((query as any).where);
-          update = { $set: (query as any).update };
-        } else if ('updates' in query && 'where' in query && 'methods' in query) {
-          // Handle format: { updates: [...], where: [...], methods: [...] }
+        // Handle UpdateParams format: { updates: [...], where: [...], methods: [...] }
+        if ('updates' in query && 'where' in query && 'methods' in query) {
           const mongoQuery = this._queries.createUpdateQuery(
-            (query as any).updates || [],
-            (query as any).where || [],
-            (query as any).methods || []
+            (query as UpdateParams).updates || [],
+            (query as UpdateParams).where || [],
+            (query as UpdateParams).methods || []
           ) as any;
           filter = mongoQuery.filter || {};
           update = mongoQuery.update || {};
           Object.assign(options, mongoQuery.options || {});
+        } else if ('where' in query && 'update' in query) {
+          // Handle format: { where: {...}, update: {...} }
+          const whereParser = new MongoWhereParser();
+          filter = whereParser.parse((query as any).where);
+          update = { $set: (query as any).update };
         }
       }
 
@@ -326,8 +327,13 @@ export class MongoSource<T> implements Source<T> {
         options.session = session;
       }
 
-      // Use updateMany by default for bulk operations
-      const updateResult = await this.collection.updateMany(filter, update as any, options);
+      // Use appropriate update method based on the query
+      let updateResult;
+      if (query && typeof query === 'object' && 'methods' in query && (query as UpdateParams).methods?.[0] === UpdateMethod.UpdateOne) {
+        updateResult = await this.collection.updateOne(filter, update as any, options);
+      } else {
+        updateResult = await this.collection.updateMany(filter, update as any, options);
+      }
 
       const { matchedCount, modifiedCount, upsertedCount, upsertedId } = updateResult;
 
@@ -420,7 +426,7 @@ export class MongoSource<T> implements Source<T> {
    * @param {DbQuery} query - The remove query to execute.
    * @returns {Promise<RemoveStats>} - A promise that resolves to the remove statistics.
    */
-  public async remove(query: DbQuery): Promise<RemoveStats> {
+  public async remove(query: DbQuery | RemoveParams): Promise<RemoveStats> {
     const operationId = this._performanceMonitor.startOperation('remove', this.collectionName, {
       hasQuery: !!query,
       hasWhere: !!(query as any)?.where
