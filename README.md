@@ -393,14 +393,14 @@ const where = new Where()
 
 const result = await userRepo.find({ where });
 if (result.isSuccess()) {
-  const users = result.value;
+  const users = result.content;
   console.log('Found users:', users);
 }
 
 // Count users
 const countResult = await userRepo.count({ where });
 if (countResult.isSuccess()) {
-  console.log('User count:', countResult.value);
+  console.log('User count:', countresult.content);
 }
 
 // Add new user
@@ -415,7 +415,7 @@ const newUser: User = {
 
 const addResult = await userRepo.add([newUser]);
 if (addResult.isSuccess()) {
-  console.log('User added:', addResult.value);
+  console.log('User added:', addresult.content);
 }
 
 // Update user
@@ -425,7 +425,7 @@ const updateResult = await userRepo.update({
   methods: ['updateOne']
 });
 if (updateResult.isSuccess()) {
-  console.log('User updated:', updateResult.value);
+  console.log('User updated:', updateresult.content);
 }
 
 // Remove user
@@ -433,7 +433,7 @@ const removeResult = await userRepo.remove({
   where: new Where().valueOf('id').isEq('507f1f77bcf86cd799439011')
 });
 if (removeResult.isSuccess()) {
-  console.log('User removed:', removeResult.value);
+  console.log('User removed:', removeresult.content);
 }
 ```
 
@@ -740,7 +740,7 @@ const itUsers = await userRepo.find(UserQueryBuilder.byDepartment('IT', 20));
 const result = await userRepo.find({ where: new Where().valueOf('email').isEq('john@example.com') });
 
 if (result.isSuccess()) {
-  const users = result.value;
+  const users = result.content;
   // Process users
 } else {
   const { error } = result.failure;
@@ -780,7 +780,7 @@ describe('UserRepository', () => {
   it('should find users', async () => {
     const result = await userRepo.find();
     expect(result.isSuccess()).toBe(true);
-    expect(result.value).toHaveLength(1);
+    expect(result.content).toHaveLength(1);
   });
 });
 ```
@@ -1539,7 +1539,7 @@ async function productExamples() {
 
   const createResult = await productRepo.add([newProduct]);
   if (createResult.isSuccess()) {
-    console.log('Product created:', createResult.value);
+    console.log('Product created:', createresult.content);
   }
 
   // Find active products in Electronics category
@@ -1664,8 +1664,8 @@ class UserService {
     const where = new Where().valueOf('email').isEq(email.toLowerCase());
     const result = await this.userRepo.find({ where, limit: 1 });
     
-    if (result.isSuccess() && result.value.length > 0) {
-      return Result.withSuccess(result.value[0]);
+    if (result.isSuccess() && result.content.length > 0) {
+      return Result.withSuccess(result.content[0]);
     }
     
     return Result.withSuccess(null);
